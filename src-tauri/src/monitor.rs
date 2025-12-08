@@ -90,6 +90,18 @@ impl ClipboardHandler for ClipboardMonitor {
 
         // Check text
         if let Ok(text) = self.app_handle.clipboard().read_text() {
+            // Check if this change was initiated by the app itself
+            if let Ok(mut last_app_change) = state.last_app_change.lock() {
+                if let Some(last_content) = last_app_change.as_ref() {
+                    if last_content == &text {
+                        log::info!("Ignoring clipboard change initiated by app");
+                        self.last_text = text;
+                        *last_app_change = None;
+                        return CallbackResult::Next;
+                    }
+                }
+            }
+
             if text != self.last_text && !text.is_empty() {
                 self.last_text = text.clone();
                 let is_sensitive = self.is_sensitive_content(&text);

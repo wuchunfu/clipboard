@@ -22,10 +22,17 @@ pub fn set_clipboard_item(
     app: tauri::AppHandle,
     content: String,
     kind: String,
+    id: Option<i64>,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
+    // Mark this content as set by the app to avoid duplication in monitor
+    // Do this BEFORE writing to clipboard to avoid race condition
+    if let Ok(mut last_change) = state.last_app_change.lock() {
+        *last_change = Some(content.clone());
+    }
+
     let item = ClipboardItem {
-        id: None,
+        id,
         content: content.clone(),
         kind: kind.clone(),
         timestamp: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
@@ -39,26 +46,33 @@ pub fn set_clipboard_item(
     }
 
     // Update DB
-    let max_size = state.config.lock().unwrap().max_history_size;
-    match state.db.insert_item(&item, max_size) {
-        Ok(pruned_items) => {
-            // Delete pruned images
-            for pruned in pruned_items {
-                if pruned.kind == "image" {
-                    let path = std::path::Path::new(&pruned.content);
-                    if path.exists() {
-                        if let Err(e) = fs::remove_file(path) {
-                            log::error!("Failed to delete pruned image file: {}", e);
-                        } else {
-                            log::info!("Deleted pruned image file: {:?}", path);
+    if let Some(id) = id {
+        if let Err(e) = state.db.update_timestamp(id) {
+            log::error!("Failed to update timestamp: {}", e);
+            return Err(e.to_string());
+        }
+    } else {
+        let max_size = state.config.lock().unwrap().max_history_size;
+        match state.db.insert_item(&item, max_size) {
+            Ok(pruned_items) => {
+                // Delete pruned images
+                for pruned in pruned_items {
+                    if pruned.kind == "image" {
+                        let path = std::path::Path::new(&pruned.content);
+                        if path.exists() {
+                            if let Err(e) = fs::remove_file(path) {
+                                log::error!("Failed to delete pruned image file: {}", e);
+                            } else {
+                                log::info!("Deleted pruned image file: {:?}", path);
+                            }
                         }
                     }
                 }
             }
-        }
-        Err(e) => {
-            log::error!("Failed to insert item into DB: {}", e);
-            return Err(e.to_string());
+            Err(e) => {
+                log::error!("Failed to insert item into DB: {}", e);
+                return Err(e.to_string());
+            }
         }
     }
 
@@ -226,4 +240,9 @@ pub fn get_paused(state: tauri::State<AppState>) -> bool {
 #[tauri::command]
 pub fn get_item_content(state: tauri::State<AppState>, id: i64) -> Result<String, String> {
     state.db.get_item_content(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_history_count(state: tauri::State<AppState>) -> usize {
+    state.db.count_history().unwrap_or(0)
 }

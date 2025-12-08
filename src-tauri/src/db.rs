@@ -311,4 +311,20 @@ impl Database {
             Ok(content)
         }
     }
+
+    pub fn count_history(&self) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let count: usize = conn.query_row("SELECT COUNT(*) FROM history", [], |row| row.get(0))?;
+        Ok(count)
+    }
+
+    pub fn update_timestamp(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "UPDATE history SET timestamp = ?1 WHERE id = ?2",
+            params![timestamp, id],
+        )?;
+        Ok(())
+    }
 }

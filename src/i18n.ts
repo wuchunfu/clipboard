@@ -9,6 +9,9 @@ const messages = {
       image: "Image",
       sensitive: "Sensitive",
     },
+    stats: {
+      items: "items",
+    },
     actions: {
       resumeRecording: "Resume Recording",
       pauseRecording: "Pause Recording",
@@ -75,6 +78,9 @@ const messages = {
       text: "文本",
       image: "图片",
       sensitive: "敏感",
+    },
+    stats: {
+      items: "条记录",
     },
     actions: {
       resumeRecording: "恢复记录",

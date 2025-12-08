@@ -52,6 +52,8 @@ pub fn run() {
 
     let is_paused = Arc::new(Mutex::new(false));
     let is_paused_state = is_paused.clone();
+    let last_app_change = Arc::new(Mutex::new(None));
+    let last_app_change_state = last_app_change.clone();
 
     tauri::Builder::default()
         .plugin(
@@ -160,6 +162,7 @@ pub fn run() {
                 config_path: config_path.clone(),
                 config: config_arc.clone(),
                 is_paused: is_paused_state.clone(),
+                last_app_change: last_app_change_state.clone(),
             });
 
             // 托盘设置
@@ -190,7 +193,22 @@ pub fn run() {
                             let state = app.state::<AppState>();
                             if let Ok(history) = state.db.get_history(1, 20) {
                                 if let Some(item) = history.get(index) {
+                                    // Prevent duplication in monitor
+                                    if let Ok(mut last_change) = state.last_app_change.lock() {
+                                        *last_change = Some(item.content.clone());
+                                    }
+
                                     let _ = write_to_clipboard(app, item);
+
+                                    // Update timestamp to move to top
+                                    if let Some(id) = item.id {
+                                        let _ = state.db.update_timestamp(id);
+                                        // Refresh tray to show new order
+                                        if let Ok(new_history) = state.db.get_history(1, 20) {
+                                            let _ =
+                                                crate::tray::update_tray_menu(app, &new_history);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -230,7 +248,8 @@ pub fn run() {
             save_config,
             set_paused,
             get_paused,
-            get_item_content
+            get_item_content,
+            get_history_count
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {

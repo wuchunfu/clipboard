@@ -8,4 +8,5 @@ pub struct AppState {
     pub config_path: PathBuf,
     pub config: Arc<Mutex<AppConfig>>,
     pub is_paused: Arc<Mutex<bool>>,
+    pub last_app_change: Arc<Mutex<Option<String>>>,
 }

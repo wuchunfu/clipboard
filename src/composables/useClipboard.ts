@@ -11,6 +11,7 @@ export function useClipboard() {
   const { showToast } = useToast();
 
   const history = ref<ClipboardItem[]>([]);
+  const totalCount = ref(0);
   const searchQuery = ref("");
   const selectedIndex = ref(0);
   const activeFilter = ref<"all" | "text" | "image" | "sensitive">("all");
@@ -74,6 +75,7 @@ export function useClipboard() {
         page: 1,
         pageSize: 1000,
       });
+      totalCount.value = await invoke<number>("get_history_count");
       // Ensure selection is valid
       if (selectedIndex.value >= filteredHistory.value.length) {
         selectedIndex.value = 0;
@@ -103,8 +105,9 @@ export function useClipboard() {
       }
 
       await invoke("set_clipboard_item", {
-        content: content,
+        content,
         kind: item.kind,
+        id: item.id,
       });
       await loadHistory();
       searchQuery.value = "";
@@ -183,6 +186,7 @@ export function useClipboard() {
 
   return {
     history,
+    totalCount,
     searchQuery,
     selectedIndex,
     activeFilter,

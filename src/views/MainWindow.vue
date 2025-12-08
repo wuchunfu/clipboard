@@ -33,6 +33,8 @@ const { toastMessage } = useToast();
 const { formatTimeAgo } = useTimeAgo();
 
 const {
+  history,
+  totalCount,
   searchQuery,
   selectedIndex,
   activeFilter,
@@ -178,6 +180,9 @@ onUnmounted(() => {
           >
             {{ t(`filters.${filter}`) }}
           </Button>
+          <span class="text-xs text-muted-foreground ml-2 self-center">
+            {{ totalCount }} {{ t("stats.items") }}
+          </span>
         </div>
 
         <div class="flex gap-1">
