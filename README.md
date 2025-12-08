@@ -1,33 +1,95 @@
-1. 核心架构与性能 (Stability & Performance)
-   这是商业产品的基石，用户付费购买的是“可靠性”。
+# Clipboard Manager
 
-存储引擎升级 (SQLite):
-现状: JSON 文件。
-改造: 正如之前讨论的，为了支持“无限历史记录”和“全文检索（FTS）”，必须迁移到 SQLite。商业用户通常希望保留数月甚至数年的记录，JSON 无法承载。
-本地数据加密 (Encryption):
-现状: 明文存储。
-改造: 这是商业软件的红线。必须使用 AES-GCM 等算法加密本地数据库。如果用户的电脑丢失，别人不能轻易读取到他的剪贴板历史。
-富文本与文件支持:
-现状: 仅支持纯文本和图片。
-改造: 商业级剪贴板必须支持 HTML/RTF（保留格式的文本，如 Word/Excel 内容）以及文件列表（复制文件并在另一处粘贴文件）。 2. 隐私与安全 (Privacy & Trust)
-剪贴板工具涉及极高的隐私权限，建立信任是付费转化的关键。
+A lightweight, secure, and modern clipboard manager built with **Rust (Tauri v2)** and **Vue 3**.
 
-应用黑名单管理 (App Exclusion UI):
-现状: 后端硬编码了 1Password 等应用。
-改造: 提供前端 UI，允许用户自定义哪些 App 的复制内容不被记录（例如公司内部的加密通讯软件）。
-权限引导流程 (Onboarding):
-现状: 依赖系统默认弹窗。
-改造: macOS 的“辅助功能权限”是自动粘贴功能的关键。需要设计一个漂亮的引导页，检测权限状态，并手把手教用户如何开启。
+![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
+![Tauri](https://img.shields.io/badge/Tauri-v2-orange.svg)
+![Vue](https://img.shields.io/badge/Vue-3-green.svg)
 
-3. 差异化功能 (Unique Selling Points)
-   用户为什么要付费？通常是为了以下高级功能：
+## ✨ Features
 
-云同步 (Cloud Sync):
-价值: 实现 macOS、Windows 甚至 iOS 端的剪贴板同步。这是目前市场上竞品（如 Paste）的核心付费点。需实现端到端加密（E2E）。
-智能操作 (Smart Actions):
-价值: 对复制的内容进行处理。
-OCR: 复制图片，自动提取其中的文字。
-格式转换: 复制 JSON，提供“格式化”选项；复制小写，提供“转大写”选项。
-链接预览: 复制 URL，显示网页标题或缩略图。
-粘贴队列 (Paste Stack):
-价值: 允许用户连续复制 A、B、C，然后按顺序粘贴 A、B、C。这对填表单场景非常有用。
+- **📋 History Management**: Automatically records text and images copied to your clipboard.
+- **🔍 Smart Search**: Quickly find clipboard history with full-text search.
+- **🖼️ Image Support**: View and paste images directly from your history.
+- **🔒 Privacy Focused**:
+  - **Sensitive Data Detection**: Automatically detects potential passwords or sensitive info.
+  - **App Filtering**: Ignore clipboard changes from specific applications (e.g., password managers).
+  - **Memory Only**: Sensitive items can be marked to not persist to disk.
+- **⚡ Performance**: Optimized for large text content with lazy loading.
+- **⌨️ Keyboard Driven**: Vim-like navigation (`j`/`k`) and global shortcuts.
+- **🌍 Internationalization**: Support for English and Chinese (简体中文).
+- **🚀 Auto-start**: Option to launch automatically at system login.
+
+## 🎮 Usage
+
+### Global Shortcuts
+
+- **Toggle Clipboard History**: `Cmd+Shift+V` (macOS) or `Ctrl+Shift+V` (Windows/Linux) - _Default, configurable in settings._
+
+### Navigation (Popup Window)
+
+- **Select Item**: `↑` / `↓` or `Ctrl+n` / `Ctrl+p` or `Ctrl+j` / `Ctrl+k` (Vim style)
+- **Paste Item**: `Enter`
+- **Preview Item**: `Space`
+- **Close / Back**: `Esc`
+
+### Data Storage
+
+Your clipboard history and settings are stored locally in:
+
+- **macOS**: `~/.clipboard-manager/`
+- **Windows/Linux**: `~/.clipboard-manager/` (or standard AppData location)
+
+> **Note**: The database is encrypted using AES-GCM for security.
+
+## 🛠️ Tech Stack
+
+- **Backend**: Rust, Tauri v2, SQLite
+- **Frontend**: Vue 3, TypeScript, Tailwind CSS v4
+- **UI Components**: Radix Vue, Lucide Icons
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18+)
+- [pnpm](https://pnpm.io/)
+- [Rust](https://www.rust-lang.org/) (latest stable)
+
+### Installation
+
+1. Clone the repository:
+
+   ```bash
+   git clone https://github.com/yourusername/clipboard.git
+   cd clipboard
+   ```
+
+2. Install frontend dependencies:
+
+   ```bash
+   pnpm install
+   ```
+
+3. Run the development server:
+   ```bash
+   pnpm tauri dev
+   ```
+
+### Build
+
+To build the application for production:
+
+```bash
+pnpm tauri build
+```
+
+The executable will be located in `src-tauri/target/release/bundle/`.
+
+## 📝 License
+
+This project is licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for details.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
