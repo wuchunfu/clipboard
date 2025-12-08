@@ -1,0 +1,38 @@
+{
+  "homepage.tagline": {
+    "message": "现代、轻量且安全的剪贴板管理工具",
+    "description": "The tagline of the homepage"
+  },
+  "homepage.download": {
+    "message": "立即下载 🚀",
+    "description": "The download button label"
+  },
+  "homepage.getStarted": {
+    "message": "快速开始 ⏱️",
+    "description": "The get started button label"
+  },
+  "feature.secure.title": {
+    "message": "安全隐私",
+    "description": "Title for secure feature"
+  },
+  "feature.secure.description": {
+    "message": "您的数据仅存储在本地设备上。我们使用 AES-GCM 加密存储您的剪贴板历史，确保您的敏感信息绝对安全。",
+    "description": "Description for secure feature"
+  },
+  "feature.fast.title": {
+    "message": "极速体验",
+    "description": "Title for fast feature"
+  },
+  "feature.fast.description": {
+    "message": "基于 Rust 和 Tauri 构建，应用极其轻量且高性能。即使有数千条历史记录，也能实现即时搜索和流畅滚动。",
+    "description": "Description for fast feature"
+  },
+  "feature.crossPlatform.title": {
+    "message": "跨平台支持",
+    "description": "Title for cross platform feature"
+  },
+  "feature.crossPlatform.description": {
+    "message": "无论您使用 macOS、Windows 还是 Linux，我们都能提供一致的原生体验。",
+    "description": "Description for cross platform feature"
+  }
+}
