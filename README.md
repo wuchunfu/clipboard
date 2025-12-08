@@ -6,6 +6,8 @@ A lightweight, secure, and modern clipboard manager built with **Rust (Tauri v2)
 ![Tauri](https://img.shields.io/badge/Tauri-v2-orange.svg)
 ![Vue](https://img.shields.io/badge/Vue-3-green.svg)
 
+[🌐 Website & Documentation](https://tipsxBase.github.io/clipboard/)
+
 ## ✨ Features
 
 - **📋 History Management**: Automatically records text and images copied to your clipboard.

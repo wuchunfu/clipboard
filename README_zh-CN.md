@@ -6,6 +6,8 @@
 ![Tauri](https://img.shields.io/badge/Tauri-v2-orange.svg)
 ![Vue](https://img.shields.io/badge/Vue-3-green.svg)
 
+[🌐 官网与文档](https://tipsxBase.github.io/clipboard/)
+
 ## ✨ 功能特性
 
 - **📋 历史记录管理**: 自动记录复制到剪贴板的文本和图片。
