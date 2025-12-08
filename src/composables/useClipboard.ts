@@ -1,4 +1,4 @@
-import { ref, computed, nextTick } from "vue";
+import { ref, computed, nextTick, watch } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -15,6 +15,33 @@ export function useClipboard() {
   const selectedIndex = ref(0);
   const activeFilter = ref<"all" | "text" | "image" | "sensitive">("all");
   const previewItem = ref<ClipboardItem | null>(null);
+  const previewContent = ref("");
+
+  watch(previewItem, async (newItem) => {
+    if (!newItem) {
+      previewContent.value = "";
+      return;
+    }
+
+    if (newItem.kind === "text" && newItem.id) {
+      try {
+        // Initially set to truncated content to show something immediately
+        previewContent.value = newItem.content;
+        // Fetch full content
+        const fullContent = await invoke<string>("get_item_content", {
+          id: newItem.id,
+        });
+        // Only update if the preview item hasn't changed in the meantime
+        if (previewItem.value?.id === newItem.id) {
+          previewContent.value = fullContent;
+        }
+      } catch (e) {
+        console.error("Failed to fetch full content for preview:", e);
+      }
+    } else {
+      previewContent.value = "";
+    }
+  });
 
   const filteredHistory = computed(() => {
     let items = history.value;
@@ -43,7 +70,10 @@ export function useClipboard() {
 
   async function loadHistory() {
     try {
-      history.value = await invoke<ClipboardItem[]>("get_history");
+      history.value = await invoke<ClipboardItem[]>("get_history", {
+        page: 1,
+        pageSize: 1000,
+      });
       // Ensure selection is valid
       if (selectedIndex.value >= filteredHistory.value.length) {
         selectedIndex.value = 0;
@@ -53,14 +83,27 @@ export function useClipboard() {
     }
   }
 
-  async function pasteItem(item: ClipboardItem) {
+  async function pasteItem(item: ClipboardItem, hideWindow = true) {
     try {
       // Close preview if open
       previewItem.value = null;
 
-      await getCurrentWindow().hide();
+      if (hideWindow) {
+        await getCurrentWindow().hide();
+      }
+
+      // Fetch full content if it's text and might be truncated
+      let content = item.content;
+      if (item.kind === "text" && item.id) {
+        try {
+          content = await invoke<string>("get_item_content", { id: item.id });
+        } catch (e) {
+          console.error("Failed to fetch full content, using preview:", e);
+        }
+      }
+
       await invoke("set_clipboard_item", {
-        content: item.content,
+        content: content,
         kind: item.kind,
       });
       await loadHistory();
@@ -106,7 +149,6 @@ export function useClipboard() {
   }
 
   async function clearHistory() {
-    if (!confirm(t("toast.confirmClearHistory"))) return;
     try {
       await invoke("clear_history");
       await loadHistory();
@@ -145,6 +187,7 @@ export function useClipboard() {
     selectedIndex,
     activeFilter,
     previewItem,
+    previewContent,
     filteredHistory,
     loadHistory,
     pasteItem,

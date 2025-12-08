@@ -16,17 +16,21 @@ import {
 } from "lucide-vue-next";
 import Button from "@/components/ui/button/Button.vue";
 import Input from "@/components/ui/input/Input.vue";
+import LocalImage from "@/components/LocalImage.vue";
 import { useClipboard } from "@/composables/useClipboard";
 import { useSettings } from "@/composables/useSettings";
 import { useToast } from "@/composables/useToast";
+import { useTimeAgo } from "@/composables/useTimeAgo";
 
 const { t } = useI18n();
 const { toastMessage } = useToast();
+const { formatTimeAgo } = useTimeAgo();
 
 const {
   searchQuery,
   selectedIndex,
   previewItem,
+  previewContent,
   filteredHistory,
   loadHistory,
   pasteItem,
@@ -143,7 +147,7 @@ onUnmounted(() => {
               <div class="flex justify-between items-baseline mb-0.5">
                 <span
                   class="text-[10px] font-mono text-muted-foreground opacity-70"
-                  >{{ item.timestamp.split(" ")[1] }}</span
+                  >{{ formatTimeAgo(item.timestamp) }}</span
                 >
               </div>
               <p
@@ -160,8 +164,8 @@ onUnmounted(() => {
                 v-else
                 class="h-16 w-full rounded-md overflow-hidden bg-muted/50 border border-border mt-1"
               >
-                <img
-                  :src="getImageSrc(item.content)"
+                <LocalImage
+                  :src="item.content"
                   class="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
                 />
               </div>
@@ -256,7 +260,9 @@ onUnmounted(() => {
           <div class="flex items-center gap-2 text-muted-foreground">
             <FileText v-if="previewItem.kind === 'text'" class="w-4 h-4" />
             <ImageIcon v-else class="w-4 h-4" />
-            <span class="text-sm font-medium">{{ previewItem.timestamp }}</span>
+            <span class="text-sm font-medium">{{
+              formatTimeAgo(previewItem.timestamp)
+            }}</span>
           </div>
           <Button
             @click="previewItem = null"
@@ -271,11 +277,11 @@ onUnmounted(() => {
           <pre
             v-if="previewItem.kind === 'text'"
             class="font-mono text-sm text-foreground whitespace-pre-wrap break-all"
-            >{{ previewItem.content }}</pre
+            >{{ previewContent || previewItem.content }}</pre
           >
           <div v-else class="flex justify-center">
-            <img
-              :src="getImageSrc(previewItem.content)"
+            <LocalImage
+              :src="previewItem.content"
               class="max-w-full rounded-lg shadow-lg"
             />
           </div>

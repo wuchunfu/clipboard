@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClipboardItem {
+    pub id: Option<i64>,
     pub content: String, // 文字内容或图片的Base64
     pub kind: String,    // "text" or "image"
     pub timestamp: String,
@@ -15,10 +16,30 @@ pub struct AppConfig {
     pub max_history_size: usize,
     #[serde(default = "default_language")]
     pub language: String,
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    #[serde(default = "default_sensitive_apps")]
+    pub sensitive_apps: Vec<String>,
 }
 
 fn default_language() -> String {
     "auto".to_string()
+}
+
+fn default_theme() -> String {
+    "auto".to_string()
+}
+
+fn default_sensitive_apps() -> Vec<String> {
+    vec![
+        "1Password".to_string(),
+        "Keychain Access".to_string(),
+        "Bitwarden".to_string(),
+        "LastPass".to_string(),
+        "KeePassXC".to_string(),
+        "Enpass".to_string(),
+        "Dashlane".to_string(),
+    ]
 }
 
 impl Default for AppConfig {
@@ -27,37 +48,8 @@ impl Default for AppConfig {
             shortcut: "CommandOrControl+Shift+V".to_string(),
             max_history_size: 20,
             language: "auto".to_string(),
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct ClipboardHistory {
-    pub items: Vec<ClipboardItem>,
-    pub max_size: usize,
-}
-
-impl ClipboardHistory {
-    pub fn new(max_size: usize) -> Self {
-        Self {
-            items: Vec::new(),
-            max_size,
-        }
-    }
-
-    pub fn push(&mut self, item: ClipboardItem) {
-        // 如果内容已存在，先移除旧的
-        if let Some(index) = self
-            .items
-            .iter()
-            .position(|x| x.content == item.content && x.kind == item.kind)
-        {
-            self.items.remove(index);
-        }
-
-        self.items.insert(0, item);
-        if self.items.len() > self.max_size {
-            self.items.pop();
+            theme: "auto".to_string(),
+            sensitive_apps: default_sensitive_apps(),
         }
     }
 }

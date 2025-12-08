@@ -1,4 +1,6 @@
 mod commands;
+mod crypto;
+mod db;
 mod models;
 mod monitor;
 mod state;
@@ -10,16 +12,16 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::Manager;
-use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 use crate::commands::*;
-use crate::models::{AppConfig, ClipboardHistory, ClipboardItem};
+use crate::crypto::Crypto;
+use crate::db::Database;
+use crate::models::AppConfig;
 use crate::monitor::ClipboardMonitor;
 use crate::state::AppState;
-use crate::tray::{create_history_menu, update_tray_menu};
+use crate::tray::create_history_menu;
 use crate::utils::write_to_clipboard;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -40,12 +42,14 @@ pub fn run() {
         AppConfig::default()
     };
 
-    let max_size = config.max_history_size;
+    let db_path = app_data_dir.join("history.db");
+    let key_path = app_data_dir.join("secret.key");
+    let crypto = Arc::new(Crypto::new(&key_path));
+    let db = Arc::new(Database::new(&db_path, crypto).expect("Failed to initialize database"));
+
     let shortcut_key = config.shortcut.clone();
     let config_arc = Arc::new(Mutex::new(config));
 
-    let history = Arc::new(Mutex::new(ClipboardHistory::new(max_size)));
-    let history_state = history.clone();
     let is_paused = Arc::new(Mutex::new(false));
     let is_paused_state = is_paused.clone();
 
@@ -122,6 +126,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
@@ -147,22 +152,10 @@ pub fn run() {
             if !images_dir.exists() {
                 let _ = fs::create_dir_all(&images_dir);
             }
-            let history_path = app_data_dir.join("history.json");
-
-            // 加载历史
-            {
-                let mut history_guard = history_state.lock().expect("Failed to lock history");
-                if let Ok(content) = fs::read_to_string(&history_path) {
-                    if let Ok(items) = serde_json::from_str::<Vec<ClipboardItem>>(&content) {
-                        history_guard.items = items;
-                    }
-                }
-            }
 
             // 将状态交给 Tauri 管理
             app.manage(AppState {
-                history: history_state.clone(),
-                data_path: history_path.clone(),
+                db: db.clone(),
                 config_path: config_path.clone(),
                 config: config_arc.clone(),
                 is_paused: is_paused_state.clone(),
@@ -170,8 +163,8 @@ pub fn run() {
 
             // 托盘设置
             let menu = {
-                let history = history_state.lock().unwrap();
-                create_history_menu(app.handle(), &history.items).unwrap()
+                let history = db.get_history(1, 20).unwrap_or_default();
+                create_history_menu(app.handle(), &history).unwrap()
             };
 
             let _tray = TrayIconBuilder::with_id("tray")
@@ -194,9 +187,10 @@ pub fn run() {
                     id if id.starts_with("history_") => {
                         if let Ok(index) = id.replace("history_", "").parse::<usize>() {
                             let state = app.state::<AppState>();
-                            let history = state.history.lock().unwrap();
-                            if let Some(item) = history.items.get(index) {
-                                let _ = write_to_clipboard(app, item);
+                            if let Ok(history) = state.db.get_history(1, 20) {
+                                if let Some(item) = history.get(index) {
+                                    let _ = write_to_clipboard(app, item);
+                                }
                             }
                         }
                     }
@@ -234,7 +228,8 @@ pub fn run() {
             get_config,
             save_config,
             set_paused,
-            get_paused
+            get_paused,
+            get_item_content
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {

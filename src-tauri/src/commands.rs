@@ -9,9 +9,12 @@ use crate::tray::update_tray_menu;
 use crate::utils::write_to_clipboard;
 
 #[tauri::command]
-pub fn get_history(state: tauri::State<AppState>) -> Vec<ClipboardItem> {
-    let history = state.history.lock().unwrap();
-    history.items.clone()
+pub fn get_history(
+    state: tauri::State<AppState>,
+    page: usize,
+    page_size: usize,
+) -> Vec<ClipboardItem> {
+    state.db.get_history(page, page_size).unwrap_or_default()
 }
 
 #[tauri::command]
@@ -22,6 +25,7 @@ pub fn set_clipboard_item(
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
     let item = ClipboardItem {
+        id: None,
         content: content.clone(),
         kind: kind.clone(),
         timestamp: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
@@ -34,21 +38,33 @@ pub fn set_clipboard_item(
         return Err(e);
     }
 
-    // Update history
-    let mut history = state.history.lock().unwrap();
-    history.push(item);
-
-    // Save
-    let items_to_save: Vec<&ClipboardItem> =
-        history.items.iter().filter(|i| !i.is_sensitive).collect();
-    if let Err(e) =
-        serde_json::to_string(&items_to_save).map(|json| fs::write(&state.data_path, json))
-    {
-        log::error!("Failed to save history: {}", e);
+    // Update DB
+    let max_size = state.config.lock().unwrap().max_history_size;
+    match state.db.insert_item(&item, max_size) {
+        Ok(pruned_items) => {
+            // Delete pruned images
+            for pruned in pruned_items {
+                if pruned.kind == "image" {
+                    let path = std::path::Path::new(&pruned.content);
+                    if path.exists() {
+                        if let Err(e) = fs::remove_file(path) {
+                            log::error!("Failed to delete pruned image file: {}", e);
+                        } else {
+                            log::info!("Deleted pruned image file: {:?}", path);
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to insert item into DB: {}", e);
+            return Err(e.to_string());
+        }
     }
 
     // Update Tray
-    if let Err(e) = update_tray_menu(&app, &history.items) {
+    let history = state.db.get_history(1, 20).unwrap_or_default();
+    if let Err(e) = update_tray_menu(&app, &history) {
         log::error!("Failed to update tray menu: {}", e);
     }
 
@@ -62,65 +78,78 @@ pub fn delete_item(
     index: usize,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
-    let mut history = state.history.lock().unwrap();
-    if index < history.items.len() {
-        history.items.remove(index);
-        // Save
-        let items_to_save: Vec<&ClipboardItem> =
-            history.items.iter().filter(|i| !i.is_sensitive).collect();
-        if let Err(e) =
-            serde_json::to_string(&items_to_save).map(|json| fs::write(&state.data_path, json))
-        {
-            log::error!("Failed to save history after delete: {}", e);
+    match state.db.delete_item(index) {
+        Ok(Some(item)) => {
+            if item.kind == "image" {
+                let path = std::path::Path::new(&item.content);
+                if path.exists() {
+                    if let Err(e) = fs::remove_file(path) {
+                        log::error!("Failed to delete image file: {}", e);
+                    } else {
+                        log::info!("Deleted image file: {:?}", path);
+                    }
+                }
+            }
         }
-
-        // Update Tray
-        if let Err(e) = update_tray_menu(&app, &history.items) {
-            log::error!("Failed to update tray menu after delete: {}", e);
+        Ok(None) => {
+            log::warn!("Item at index {} not found", index);
         }
-        log::info!("Deleted item at index {}", index);
-    } else {
-        log::warn!("Attempted to delete item at invalid index {}", index);
+        Err(e) => {
+            log::error!("Failed to delete item from DB: {}", e);
+            return Err(e.to_string());
+        }
     }
+
+    // Update Tray
+    let history = state.db.get_history(1, 20).unwrap_or_default();
+    if let Err(e) = update_tray_menu(&app, &history) {
+        log::error!("Failed to update tray menu after delete: {}", e);
+    }
+    log::info!("Deleted item at index {}", index);
     Ok(())
 }
 
 #[tauri::command]
 pub fn toggle_sensitive(state: tauri::State<AppState>, index: usize) -> Result<bool, String> {
-    let mut history = state.history.lock().unwrap();
-    let new_state = if let Some(item) = history.items.get_mut(index) {
-        item.is_sensitive = !item.is_sensitive;
-        item.is_sensitive
-    } else {
-        return Err(format!("Item at index {} not found", index));
-    };
-
-    // Save (filtering out sensitive items)
-    let items_to_save: Vec<&ClipboardItem> =
-        history.items.iter().filter(|i| !i.is_sensitive).collect();
-    if let Err(e) =
-        serde_json::to_string(&items_to_save).map(|json| fs::write(&state.data_path, json))
-    {
-        log::error!("Failed to save history after toggle: {}", e);
+    match state.db.toggle_sensitive(index) {
+        Ok(new_state) => {
+            log::info!(
+                "Toggled sensitive state for item {} to {}",
+                index,
+                new_state
+            );
+            Ok(new_state)
+        }
+        Err(e) => {
+            log::error!("Failed to toggle sensitive state: {}", e);
+            Err(e.to_string())
+        }
     }
-
-    log::info!(
-        "Toggled sensitive state for item {} to {}",
-        index,
-        new_state
-    );
-    Ok(new_state)
 }
 
 #[tauri::command]
 pub fn clear_history(app: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
-    let mut history = state.history.lock().unwrap();
-    history.items.clear();
-    // Save (empty list)
-    let _ = fs::write(&state.data_path, "[]");
+    match state.db.clear_history() {
+        Ok(items) => {
+            for item in items {
+                if item.kind == "image" {
+                    let path = std::path::Path::new(&item.content);
+                    if path.exists() {
+                        if let Err(e) = fs::remove_file(path) {
+                            log::error!("Failed to delete image file: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to clear history: {}", e);
+            return Err(e.to_string());
+        }
+    }
 
     // Update Tray
-    let _ = update_tray_menu(&app, &history.items);
+    let _ = update_tray_menu(&app, &[]);
     Ok(())
 }
 
@@ -136,6 +165,8 @@ pub fn save_config(
     shortcut: String,
     max_history_size: usize,
     language: String,
+    theme: String,
+    sensitive_apps: Vec<String>,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
     let old_shortcut = {
@@ -147,66 +178,52 @@ pub fn save_config(
         shortcut: shortcut.clone(),
         max_history_size,
         language: language.clone(),
+        theme: theme.clone(),
+        sensitive_apps,
     };
 
     // Save to file
-    let json = serde_json::to_string(&new_config).map_err(|e| e.to_string())?;
-    fs::write(&state.config_path, json).map_err(|e| e.to_string())?;
+    if let Ok(json) = serde_json::to_string_pretty(&new_config) {
+        if let Err(e) = fs::write(&state.config_path, json) {
+            log::error!("Failed to save config file: {}", e);
+            return Err(e.to_string());
+        }
+    }
 
-    // Update in-memory config
+    // Update state
     {
         let mut config = state.config.lock().unwrap();
         *config = new_config;
     }
 
-    // Update history max size
-    {
-        let mut history = state.history.lock().unwrap();
-        history.max_size = max_history_size;
-        // Trim if necessary
-        while history.items.len() > max_history_size {
-            history.items.pop();
-        }
-    }
-
-    // Update global shortcut if changed
+    // Update shortcut if changed
     if shortcut != old_shortcut {
-        log::info!(
-            "Updating global shortcut from '{}' to '{}'",
-            old_shortcut,
-            shortcut
-        );
-        // Unregister old shortcut
-        if let Err(e) = app.global_shortcut().unregister(old_shortcut.as_str()) {
-            log::warn!("Failed to unregister old shortcut: {}", e);
-        }
-
-        // Register new shortcut
-        if let Err(e) = app.global_shortcut().register(shortcut.as_str()) {
+        let shortcut_manager = app.global_shortcut();
+        let _ = shortcut_manager.unregister(old_shortcut.as_str());
+        if let Err(e) = shortcut_manager.register(shortcut.as_str()) {
             log::error!("Failed to register new shortcut: {}", e);
-            return Err(format!("Failed to register new shortcut: {}", e));
         }
     }
 
-    // Notify frontend
-    if let Err(e) = app.emit("config-updated", ()) {
-        log::error!("Failed to emit config-updated event: {}", e);
-    }
+    // Emit event
+    let _ = app.emit("config-updated", ());
 
-    log::info!("Config saved successfully");
     Ok(())
 }
 
 #[tauri::command]
-pub fn set_paused(paused: bool, state: tauri::State<AppState>) -> Result<(), String> {
-    let mut is_paused = state.is_paused.lock().map_err(|e| e.to_string())?;
+pub fn set_paused(paused: bool, state: tauri::State<AppState>) {
+    let mut is_paused = state.is_paused.lock().unwrap();
     *is_paused = paused;
-    log::info!("Clipboard recording paused: {}", paused);
-    Ok(())
 }
 
 #[tauri::command]
-pub fn get_paused(state: tauri::State<AppState>) -> Result<bool, String> {
-    let is_paused = state.is_paused.lock().map_err(|e| e.to_string())?;
-    Ok(*is_paused)
+pub fn get_paused(state: tauri::State<AppState>) -> bool {
+    let is_paused = state.is_paused.lock().unwrap();
+    *is_paused
+}
+
+#[tauri::command]
+pub fn get_item_content(state: tauri::State<AppState>, id: i64) -> Result<String, String> {
+    state.db.get_item_content(id).map_err(|e| e.to_string())
 }

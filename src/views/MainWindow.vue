@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n } from "vue-i18n";
@@ -17,21 +17,27 @@ import {
   Eye,
   Command,
   CornerDownLeft,
+  Plus,
 } from "lucide-vue-next";
 import Button from "@/components/ui/button/Button.vue";
 import Input from "@/components/ui/input/Input.vue";
 import { useClipboard } from "@/composables/useClipboard";
 import { useSettings } from "@/composables/useSettings";
 import { useToast } from "@/composables/useToast";
+import { useTimeAgo } from "@/composables/useTimeAgo";
+
+import LocalImage from "@/components/LocalImage.vue";
 
 const { t } = useI18n();
 const { toastMessage } = useToast();
+const { formatTimeAgo } = useTimeAgo();
 
 const {
   searchQuery,
   selectedIndex,
   activeFilter,
   previewItem,
+  previewContent,
   filteredHistory,
   loadHistory,
   pasteItem,
@@ -49,6 +55,8 @@ const {
   tempShortcut,
   tempMaxSize,
   tempLanguage,
+  tempTheme,
+  tempSensitiveApps,
   isRecording,
   isPaused,
   isAutoStart,
@@ -61,6 +69,22 @@ const {
   handleShortcutKeydown,
   setupConfigListeners,
 } = useSettings();
+
+const newAppInput = ref("");
+const showClearConfirm = ref(false);
+
+function addSensitiveApp() {
+  if (newAppInput.value.trim()) {
+    if (!tempSensitiveApps.value.includes(newAppInput.value.trim())) {
+      tempSensitiveApps.value.push(newAppInput.value.trim());
+    }
+    newAppInput.value = "";
+  }
+}
+
+function removeSensitiveApp(app: string) {
+  tempSensitiveApps.value = tempSensitiveApps.value.filter((a) => a !== app);
+}
 
 function handleKeydown(e: KeyboardEvent) {
   const len = filteredHistory.value.length;
@@ -86,7 +110,7 @@ function handleKeydown(e: KeyboardEvent) {
   } else if (e.key === "Enter") {
     e.preventDefault();
     if (filteredHistory.value[selectedIndex.value]) {
-      pasteItem(filteredHistory.value[selectedIndex.value]);
+      pasteItem(filteredHistory.value[selectedIndex.value], false);
     }
   } else if (e.key === " ") {
     e.preventDefault();
@@ -182,7 +206,7 @@ onUnmounted(() => {
             <Settings class="w-4 h-4" />
           </Button>
           <Button
-            @click="clearHistory"
+            @click="showClearConfirm = true"
             size="icon"
             variant="ghost"
             class="h-7 w-7 hover:text-destructive"
@@ -199,14 +223,14 @@ onUnmounted(() => {
       <TransitionGroup name="list">
         <div
           v-for="(item, index) in filteredHistory"
-          :key="item.timestamp"
+          :key="item.id || item.timestamp"
           class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer p-3"
           :class="[
             index === selectedIndex
               ? 'bg-accent border-primary/20 selected-item'
               : '',
           ]"
-          @click="pasteItem(item)"
+          @click="pasteItem(item, false)"
           @mouseenter="selectedIndex = index"
         >
           <!-- Content -->
@@ -221,7 +245,7 @@ onUnmounted(() => {
               <div class="flex justify-between items-baseline mb-0.5">
                 <span
                   class="text-[10px] font-mono text-muted-foreground opacity-70"
-                  >{{ item.timestamp.split(" ")[1] }}</span
+                  >{{ formatTimeAgo(item.timestamp) }}</span
                 >
               </div>
               <p
@@ -238,8 +262,8 @@ onUnmounted(() => {
                 v-else
                 class="h-16 w-full rounded-md overflow-hidden bg-muted/50 border border-border mt-1"
               >
-                <img
-                  :src="getImageSrc(item.content)"
+                <LocalImage
+                  :src="item.content"
                   class="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
                 />
               </div>
@@ -356,7 +380,9 @@ onUnmounted(() => {
           <div class="flex items-center gap-2 text-muted-foreground">
             <FileText v-if="previewItem.kind === 'text'" class="w-4 h-4" />
             <ImageIcon v-else class="w-4 h-4" />
-            <span class="text-sm font-medium">{{ previewItem.timestamp }}</span>
+            <span class="text-sm font-medium">{{
+              formatTimeAgo(previewItem.timestamp)
+            }}</span>
           </div>
           <Button
             @click="previewItem = null"
@@ -371,11 +397,11 @@ onUnmounted(() => {
           <pre
             v-if="previewItem.kind === 'text'"
             class="font-mono text-sm text-foreground whitespace-pre-wrap break-all"
-            >{{ previewItem.content }}</pre
+            >{{ previewContent || previewItem.content }}</pre
           >
           <div v-else class="flex justify-center">
-            <img
-              :src="getImageSrc(previewItem.content)"
+            <LocalImage
+              :src="previewItem.content"
               class="max-w-full rounded-lg shadow-lg"
             />
           </div>
@@ -385,12 +411,49 @@ onUnmounted(() => {
         >
           <Button
             @click="
-              pasteItem(previewItem!);
+              pasteItem(previewItem!, false);
               previewItem = null;
             "
             class="gap-2"
           >
             <CornerDownLeft class="w-4 h-4" /> {{ t("actions.paste") }}
+          </Button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clear History Confirmation Modal -->
+    <div
+      v-if="showClearConfirm"
+      class="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50"
+      @click.self="showClearConfirm = false"
+    >
+      <div class="bg-card rounded-xl p-6 w-80 border border-border shadow-2xl">
+        <h2
+          class="text-lg font-bold mb-4 flex items-center gap-2 text-destructive"
+        >
+          <Trash2 class="w-5 h-5" /> {{ t("actions.clearHistory") }}
+        </h2>
+        <p class="text-sm text-muted-foreground mb-6">
+          {{ t("toast.confirmClearHistory") }}
+        </p>
+        <div class="flex gap-3">
+          <Button
+            @click="
+              clearHistory();
+              showClearConfirm = false;
+            "
+            variant="destructive"
+            class="flex-1"
+          >
+            {{ t("actions.delete") }}
+          </Button>
+          <Button
+            @click="showClearConfirm = false"
+            variant="secondary"
+            class="flex-1"
+          >
+            {{ t("settings.cancel") }}
           </Button>
         </div>
       </div>
@@ -463,6 +526,62 @@ onUnmounted(() => {
                 <option value="en">{{ t("settings.languageEn") }}</option>
                 <option value="zh">{{ t("settings.languageZh") }}</option>
               </select>
+            </div>
+          </div>
+
+          <div>
+            <label
+              class="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2"
+              >{{ t("settings.theme") }}</label
+            >
+            <div class="relative">
+              <select
+                v-model="tempTheme"
+                class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
+              >
+                <option value="auto">{{ t("settings.themeAuto") }}</option>
+                <option value="light">{{ t("settings.themeLight") }}</option>
+                <option value="dark">{{ t("settings.themeDark") }}</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label
+              class="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2"
+              >{{ t("settings.sensitiveApps") }}</label
+            >
+            <div class="space-y-2">
+              <div class="flex gap-2">
+                <Input
+                  v-model="newAppInput"
+                  :placeholder="t('settings.appNamePlaceholder')"
+                  @keydown.enter="addSensitiveApp"
+                />
+                <Button
+                  @click="addSensitiveApp"
+                  size="icon"
+                  variant="secondary"
+                  class="shrink-0"
+                >
+                  <Plus class="w-4 h-4" />
+                </Button>
+              </div>
+              <div class="max-h-32 overflow-y-auto custom-scrollbar space-y-1">
+                <div
+                  v-for="app in tempSensitiveApps"
+                  :key="app"
+                  class="flex items-center justify-between bg-muted/50 px-3 py-1.5 rounded text-sm"
+                >
+                  <span class="truncate">{{ app }}</span>
+                  <button
+                    @click="removeSensitiveApp(app)"
+                    class="text-muted-foreground hover:text-destructive transition-colors ml-2"
+                  >
+                    <X class="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 

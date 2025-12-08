@@ -8,6 +8,7 @@
     "opener:default",
     "store:default",
     "clipboard-manager:default",
+    "fs:allow-appdata-read-recursive",
     "global-shortcut:default",
     "core:window:allow-hide",
     "autostart:allow-enable",

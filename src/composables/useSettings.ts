@@ -14,15 +14,39 @@ export function useSettings() {
     shortcut: "CommandOrControl+Shift+V",
     max_history_size: 20,
     language: "auto",
+    theme: "auto",
+    sensitive_apps: [],
   });
 
   const showSettings = ref(false);
   const tempShortcut = ref("");
   const tempMaxSize = ref(20);
   const tempLanguage = ref("auto");
+  const tempTheme = ref("auto");
+  const tempSensitiveApps = ref<string[]>([]);
   const isRecording = ref(false);
   const isPaused = ref(false);
   const isAutoStart = ref(false);
+
+  // Theme handling
+  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+  function applyTheme(theme: string) {
+    const isDark = theme === "dark" || (theme === "auto" && mediaQuery.matches);
+
+    if (isDark) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }
+
+  // Listen for system theme changes
+  mediaQuery.addEventListener("change", () => {
+    if (config.value.theme === "auto") {
+      applyTheme("auto");
+    }
+  });
 
   async function loadConfig() {
     try {
@@ -30,6 +54,8 @@ export function useSettings() {
       tempShortcut.value = config.value.shortcut;
       tempMaxSize.value = config.value.max_history_size;
       tempLanguage.value = config.value.language || "auto";
+      tempTheme.value = config.value.theme || "auto";
+      tempSensitiveApps.value = [...(config.value.sensitive_apps || [])];
 
       // Apply language
       if (config.value.language === "auto") {
@@ -37,6 +63,9 @@ export function useSettings() {
       } else {
         locale.value = config.value.language;
       }
+
+      // Apply theme
+      applyTheme(config.value.theme || "auto");
     } catch (e) {
       console.error("Failed to load config:", e);
     }
@@ -48,6 +77,8 @@ export function useSettings() {
         shortcut: tempShortcut.value,
         maxHistorySize: tempMaxSize.value,
         language: tempLanguage.value,
+        theme: tempTheme.value,
+        sensitiveApps: tempSensitiveApps.value,
       });
       await loadConfig();
       showSettings.value = false;
@@ -63,6 +94,8 @@ export function useSettings() {
     tempShortcut.value = config.value.shortcut;
     tempMaxSize.value = config.value.max_history_size;
     tempLanguage.value = config.value.language || "auto";
+    tempTheme.value = config.value.theme || "auto";
+    tempSensitiveApps.value = [...(config.value.sensitive_apps || [])];
     isEnabled().then((enabled) => {
       isAutoStart.value = enabled;
     });
@@ -153,6 +186,8 @@ export function useSettings() {
     tempShortcut,
     tempMaxSize,
     tempLanguage,
+    tempTheme,
+    tempSensitiveApps,
     isRecording,
     isPaused,
     isAutoStart,

@@ -1,7 +1,6 @@
 use active_win_pos_rs::get_active_window;
 use chrono::Local;
 use clipboard_master::{CallbackResult, ClipboardHandler};
-use std::fs;
 use tauri::{Emitter, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
@@ -29,18 +28,12 @@ impl ClipboardMonitor {
     }
 
     fn is_password_manager(&self, app_name: &str) -> bool {
-        let sensitive_apps = [
-            "1Password",
-            "Keychain Access",
-            "Bitwarden",
-            "LastPass",
-            "KeePassXC",
-            "Enpass",
-            "Dashlane",
-        ];
-        sensitive_apps
+        let state = self.app_handle.state::<AppState>();
+        let config = state.config.lock().unwrap();
+        config
+            .sensitive_apps
             .iter()
-            .any(|&app| app_name.contains(app) || app_name.eq_ignore_ascii_case(app))
+            .any(|app| app_name.contains(app) || app_name.eq_ignore_ascii_case(app))
     }
 
     fn calculate_entropy(&self, s: &str) -> f64 {
@@ -93,6 +86,7 @@ impl ClipboardHandler for ClipboardMonitor {
         }
 
         let mut updated = false;
+        let max_size = state.config.lock().unwrap().max_history_size;
 
         // Check text
         if let Ok(text) = self.app_handle.clipboard().read_text() {
@@ -100,18 +94,35 @@ impl ClipboardHandler for ClipboardMonitor {
                 self.last_text = text.clone();
                 let is_sensitive = self.is_sensitive_content(&text);
 
-                let mut history = state.history.lock().expect("Failed to lock history");
-                history.push(ClipboardItem {
+                let item = ClipboardItem {
+                    id: None,
                     content: text,
                     kind: "text".to_string(),
-                    timestamp: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                    timestamp: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
                     is_sensitive,
-                });
-                updated = true;
-                if is_sensitive {
-                    log::info!("New sensitive text captured (memory only)");
-                } else {
-                    log::info!("New text captured");
+                };
+
+                match state.db.insert_item(&item, max_size) {
+                    Ok(pruned_items) => {
+                        // Delete pruned images
+                        for pruned in pruned_items {
+                            if pruned.kind == "image" {
+                                let path = std::path::Path::new(&pruned.content);
+                                if path.exists() {
+                                    let _ = std::fs::remove_file(path);
+                                }
+                            }
+                        }
+                        updated = true;
+                        if is_sensitive {
+                            log::info!("New sensitive text captured");
+                        } else {
+                            log::info!("New text captured");
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to insert text item: {}", e);
+                    }
                 }
             }
         }
@@ -136,33 +147,40 @@ impl ClipboardHandler for ClipboardMonitor {
                     if let Err(e) = buffer.save(&image_path) {
                         log::error!("Failed to save image to disk: {}", e);
                     } else {
-                        let mut history = state.history.lock().expect("Failed to lock history");
-                        history.push(ClipboardItem {
+                        let item = ClipboardItem {
+                            id: None,
                             content: image_path.to_string_lossy().to_string(),
                             kind: "image".to_string(),
-                            timestamp: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-                            is_sensitive: false, // Images are assumed non-sensitive for now, or we can't easily detect
-                        });
-                        updated = true;
-                        log::info!("New image captured and saved to {:?}", image_path);
+                            timestamp: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            is_sensitive: false,
+                        };
+
+                        match state.db.insert_item(&item, max_size) {
+                            Ok(pruned_items) => {
+                                // Delete pruned images
+                                for pruned in pruned_items {
+                                    if pruned.kind == "image" {
+                                        let path = std::path::Path::new(&pruned.content);
+                                        if path.exists() {
+                                            let _ = std::fs::remove_file(path);
+                                        }
+                                    }
+                                }
+                                updated = true;
+                                log::info!("New image captured and saved to {:?}", image_path);
+                            }
+                            Err(e) => {
+                                log::error!("Failed to insert image item: {}", e);
+                            }
+                        }
                     }
                 }
             }
         }
 
         if updated {
-            let history = state.history.lock().expect("Failed to lock history");
-            // Filter out sensitive items before saving
-            let items_to_save: Vec<&ClipboardItem> =
-                history.items.iter().filter(|i| !i.is_sensitive).collect();
-
-            if let Err(e) =
-                serde_json::to_string(&items_to_save).map(|json| fs::write(&state.data_path, json))
-            {
-                log::error!("Failed to save history: {}", e);
-            }
-
-            if let Err(e) = update_tray_menu(&self.app_handle, &history.items) {
+            let history = state.db.get_history(1, 20).unwrap_or_default();
+            if let Err(e) = update_tray_menu(&self.app_handle, &history) {
                 log::error!("Failed to update tray: {}", e);
             }
 
