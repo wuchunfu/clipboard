@@ -74,14 +74,21 @@ jobs:
           # Find the generated latest.json (it might be in different paths depending on OS)
           # We copy it to a unique name to avoid overwriting when downloading artifacts
           find src-tauri/target -name "latest.json" -type f -exec cp {} latest-${{ matrix.platform }}-${{ strategy.job-index }}.json \;
-          ls -l latest-*.json || echo "No latest.json found"
+
+          if [ -f latest-${{ matrix.platform }}-${{ strategy.job-index }}.json ]; then
+            echo "Found and renamed latest.json"
+            ls -l latest-*.json
+          else
+            echo "No latest.json found. Listing target directory for debugging:"
+            find src-tauri/target -maxdepth 4 -not -path '*/.*'
+          fi
 
       - name: Upload latest.json artifact
         uses: actions/upload-artifact@v4
         with:
-          name: latest-jsons
+          name: latest-json-${{ matrix.platform }}-${{ strategy.job-index }}
           path: latest-*.json
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
   publish-latest-json:
     needs: release
@@ -93,8 +100,9 @@ jobs:
       - name: Download latest.json artifacts
         uses: actions/download-artifact@v4
         with:
-          name: latest-jsons
+          pattern: latest-json-*
           path: latest_jsons
+          merge-multiple: true
 
       - name: Merge latest.json
         run: node scripts/merge-latest-json.js latest_jsons latest.json
