@@ -33,7 +33,6 @@ const { toastMessage } = useToast();
 const { formatTimeAgo } = useTimeAgo();
 
 const {
-  history,
   totalCount,
   searchQuery,
   selectedIndex,
