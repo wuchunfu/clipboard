@@ -7,14 +7,21 @@ const outputFile = process.argv[3] || "latest.json";
 console.log(`Looking for JSON files in ${inputDir}...`);
 
 if (!fs.existsSync(inputDir)) {
-  console.error(`Directory ${inputDir} does not exist.`);
-  process.exit(1);
+  console.warn(`Directory ${inputDir} does not exist. Creating it...`);
+  fs.mkdirSync(inputDir, { recursive: true });
 }
 
 const files = fs
   .readdirSync(inputDir)
   .filter((f) => f.endsWith(".json") && f.startsWith("latest-"));
 console.log(`Found ${files.length} files:`, files);
+
+if (files.length === 0) {
+  console.warn(
+    "No latest.json files found to merge. This usually means the build step failed to generate them (check TAURI_SIGNING_PRIVATE_KEY)."
+  );
+  process.exit(0);
+}
 
 let merged = null;
 
