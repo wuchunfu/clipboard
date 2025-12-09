@@ -37,6 +37,7 @@ pub fn set_clipboard_item(
         kind: kind.clone(),
         timestamp: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         is_sensitive: false, // Manually added items are assumed not sensitive
+        is_pinned: false,
     };
 
     // Write to clipboard
@@ -136,6 +137,20 @@ pub fn toggle_sensitive(state: tauri::State<AppState>, index: usize) -> Result<b
         }
         Err(e) => {
             log::error!("Failed to toggle sensitive state: {}", e);
+            Err(e.to_string())
+        }
+    }
+}
+
+#[tauri::command]
+pub fn toggle_pin(state: tauri::State<AppState>, index: usize) -> Result<bool, String> {
+    match state.db.toggle_pin(index) {
+        Ok(new_state) => {
+            log::info!("Toggled pin state for item {} to {}", index, new_state);
+            Ok(new_state)
+        }
+        Err(e) => {
+            log::error!("Failed to toggle pin state: {}", e);
             Err(e.to_string())
         }
     }

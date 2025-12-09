@@ -68,28 +68,6 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-      - name: Rename and upload latest.json
-        shell: bash
-        run: |
-          # Find the generated latest.json (it might be in different paths depending on OS)
-          # We copy it to a unique name to avoid overwriting when downloading artifacts
-          find src-tauri/target -name "latest.json" -type f -exec cp {} latest-${{ matrix.platform }}-${{ strategy.job-index }}.json \;
-
-          if [ -f latest-${{ matrix.platform }}-${{ strategy.job-index }}.json ]; then
-            echo "Found and renamed latest.json"
-            ls -l latest-*.json
-          else
-            echo "No latest.json found. Listing target directory for debugging:"
-            find src-tauri/target -maxdepth 4 -not -path '*/.*'
-          fi
-
-      - name: Upload latest.json artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: latest-json-${{ matrix.platform }}-${{ strategy.job-index }}
-          path: latest-*.json
-          if-no-files-found: warn
-
   publish-latest-json:
     needs: release
     runs-on: ubuntu-latest
@@ -99,19 +77,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download latest.json artifacts
-        uses: actions/download-artifact@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
         with:
-          pattern: latest-json-*
-          path: latest_jsons
-          merge-multiple: true
+          version: 9
 
-      - name: Merge latest.json
-        run: node scripts/merge-latest-json.mjs latest_jsons latest.json
-
-      - name: Upload merged latest.json to Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Sync node version and setup cache
+        uses: actions/setup-node@v4
         with:
-          files: latest.json
-          token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: "lts/*"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm add -D @actions/github
+
+      - name: Generate and upload latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/updater.mjs

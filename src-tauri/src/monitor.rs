@@ -35,32 +35,6 @@ impl ClipboardMonitor {
             .iter()
             .any(|app| app_name.contains(app) || app_name.eq_ignore_ascii_case(app))
     }
-
-    fn calculate_entropy(&self, s: &str) -> f64 {
-        let mut counts = std::collections::HashMap::new();
-        for c in s.chars() {
-            *counts.entry(c).or_insert(0) += 1;
-        }
-        let len = s.chars().count() as f64;
-        let mut entropy = 0.0;
-        for &count in counts.values() {
-            let p = count as f64 / len;
-            entropy -= p * p.log2();
-        }
-        entropy
-    }
-
-    fn is_sensitive_content(&self, text: &str) -> bool {
-        // Simple heuristic: high entropy and reasonable length for a password
-        if text.len() > 8 && text.len() < 64 {
-            let entropy = self.calculate_entropy(text);
-            // Threshold is arbitrary, but > 3.5 usually indicates random-ish strings
-            if entropy > 3.5 {
-                return true;
-            }
-        }
-        false
-    }
 }
 
 impl ClipboardHandler for ClipboardMonitor {
@@ -104,7 +78,7 @@ impl ClipboardHandler for ClipboardMonitor {
 
             if text != self.last_text && !text.is_empty() {
                 self.last_text = text.clone();
-                let is_sensitive = self.is_sensitive_content(&text);
+                let is_sensitive = false;
 
                 let item = ClipboardItem {
                     id: None,
@@ -112,6 +86,7 @@ impl ClipboardHandler for ClipboardMonitor {
                     kind: "text".to_string(),
                     timestamp: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
                     is_sensitive,
+                    is_pinned: false,
                 };
 
                 match state.db.insert_item(&item, max_size) {
@@ -142,6 +117,19 @@ impl ClipboardHandler for ClipboardMonitor {
         // Check image
         if let Ok(img) = self.app_handle.clipboard().read_image() {
             let rgba = img.rgba();
+
+            // Check if this change was initiated by the app itself
+            if let Ok(mut last_app_image_change) = state.last_app_image_change.lock() {
+                if let Some(last_content) = last_app_image_change.as_ref() {
+                    if last_content == rgba {
+                        log::info!("Ignoring clipboard image change initiated by app");
+                        self.last_image_hash = rgba.to_vec();
+                        *last_app_image_change = None;
+                        return CallbackResult::Next;
+                    }
+                }
+            }
+
             if !rgba.is_empty()
                 && (rgba.len() != self.last_image_hash.len()
                     || rgba != self.last_image_hash.as_slice())
@@ -165,6 +153,7 @@ impl ClipboardHandler for ClipboardMonitor {
                             kind: "image".to_string(),
                             timestamp: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
                             is_sensitive: false,
+                            is_pinned: false,
                         };
 
                         match state.db.insert_item(&item, max_size) {

@@ -54,6 +54,8 @@ pub fn run() {
     let is_paused_state = is_paused.clone();
     let last_app_change = Arc::new(Mutex::new(None));
     let last_app_change_state = last_app_change.clone();
+    let last_app_image_change = Arc::new(Mutex::new(None));
+    let last_app_image_change_state = last_app_image_change.clone();
 
     tauri::Builder::default()
         .plugin(
@@ -163,6 +165,7 @@ pub fn run() {
                 config: config_arc.clone(),
                 is_paused: is_paused_state.clone(),
                 last_app_change: last_app_change_state.clone(),
+                last_app_image_change: last_app_image_change_state.clone(),
             });
 
             // 托盘设置
@@ -243,6 +246,7 @@ pub fn run() {
             set_clipboard_item,
             delete_item,
             toggle_sensitive,
+            toggle_pin,
             clear_history,
             get_config,
             save_config,

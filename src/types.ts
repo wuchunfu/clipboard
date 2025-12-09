@@ -4,6 +4,7 @@ export interface ClipboardItem {
   kind: string;
   timestamp: string;
   is_sensitive?: boolean;
+  is_pinned?: boolean;
 }
 
 export interface AppConfig {

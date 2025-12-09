@@ -14,9 +14,10 @@ A lightweight, secure, and modern clipboard manager built with **Rust (Tauri v2)
 - **🔍 Smart Search**: Quickly find clipboard history with full-text search.
 - **🖼️ Image Support**: View and paste images directly from your history.
 - **🔒 Privacy Focused**:
-  - **Sensitive Data Detection**: Automatically detects potential passwords or sensitive info.
+  - **Sensitive Data Detection**: Manually mark items as sensitive or configure sensitive apps.
   - **App Filtering**: Ignore clipboard changes from specific applications (e.g., password managers).
   - **Memory Only**: Sensitive items can be marked to not persist to disk.
+- **📌 Pinning**: Pin important items to the top of the list to prevent them from being auto-deleted.
 - **⚡ Performance**: Optimized for large text content with lazy loading.
 - **⌨️ Keyboard Driven**: Vim-like navigation (`j`/`k`) and global shortcuts.
 - **🌍 Internationalization**: Support for English and Chinese (简体中文).
@@ -32,7 +33,7 @@ A lightweight, secure, and modern clipboard manager built with **Rust (Tauri v2)
 
 - **Select Item**: `↑` / `↓` or `Ctrl+n` / `Ctrl+p` or `Ctrl+j` / `Ctrl+k` (Vim style)
 - **Paste Item**: `Enter`
-- **Preview Item**: `Space`
+- **Preview Item**: `Space` (Press again to close)
 - **Close / Back**: `Esc`
 
 ### Data Storage

@@ -36,6 +36,21 @@ impl Database {
             tx.execute("PRAGMA user_version = 1", [])?;
         }
 
+        if version < 2 {
+            // Check if column exists first to avoid error if user manually added it or something weird happened
+            // Actually, ALTER TABLE ADD COLUMN IF NOT EXISTS is not supported in all sqlite versions,
+            // but since we use user_version, we should be safe.
+            // However, let's wrap in a try-catch block or just execute it.
+            // Rusqlite doesn't support "try", so we just execute.
+            // If it fails because column exists, we might want to ignore?
+            // But version check should prevent that.
+            let _ = tx.execute(
+                "ALTER TABLE history ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0",
+                [],
+            );
+            tx.execute("PRAGMA user_version = 2", [])?;
+        }
+
         tx.commit()?;
 
         Ok(Self {
@@ -48,7 +63,7 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let offset = (page - 1) * page_size;
         let mut stmt = conn.prepare(
-            "SELECT id, content, kind, timestamp, is_sensitive FROM history ORDER BY timestamp DESC LIMIT ?1 OFFSET ?2",
+            "SELECT id, content, kind, timestamp, is_sensitive, is_pinned FROM history ORDER BY is_pinned DESC, timestamp DESC LIMIT ?1 OFFSET ?2",
         )?;
 
         let rows = stmt.query_map(params![page_size, offset], |row| {
@@ -57,6 +72,7 @@ impl Database {
             let kind: String = row.get(2)?;
             let timestamp: String = row.get(3)?;
             let is_sensitive: bool = row.get(4)?;
+            let is_pinned: bool = row.get(5)?;
 
             let mut final_content = if is_sensitive && kind == "text" {
                 self.crypto.decrypt(&content).unwrap_or_else(|_| content)
@@ -75,6 +91,7 @@ impl Database {
                 kind,
                 timestamp,
                 is_sensitive,
+                is_pinned,
             })
         })?;
 
@@ -106,12 +123,13 @@ impl Database {
         if updated_count == 0 {
             // Insert new item
             conn.execute(
-                "INSERT INTO history (content, kind, timestamp, is_sensitive) VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO history (content, kind, timestamp, is_sensitive, is_pinned) VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![
                     content_to_store,
                     item.kind,
                     item.timestamp,
-                    item.is_sensitive
+                    item.is_sensitive,
+                    item.is_pinned
                 ],
             )?;
         }
@@ -121,9 +139,9 @@ impl Database {
         if count > max_size {
             let delete_count = count - max_size;
 
-            // Fetch items to be deleted first (oldest timestamp)
+            // Fetch items to be deleted first (oldest timestamp, NOT pinned)
             let mut stmt = conn.prepare(&format!(
-                "SELECT content, kind, timestamp, is_sensitive FROM history ORDER BY timestamp ASC LIMIT {}",
+                "SELECT content, kind, timestamp, is_sensitive, is_pinned FROM history WHERE is_pinned = 0 ORDER BY timestamp ASC LIMIT {}",
                 delete_count
             ))?;
 
@@ -132,11 +150,8 @@ impl Database {
                 let kind: String = row.get(1)?;
                 let timestamp: String = row.get(2)?;
                 let is_sensitive: bool = row.get(3)?;
+                let is_pinned: bool = row.get(4)?;
 
-                // We don't need to decrypt pruned items if we are just deleting files (images).
-                // Images are not encrypted in this scheme (only text).
-                // But if we wanted to return them, we should decrypt.
-                // For now, let's decrypt to be consistent.
                 let final_content = if is_sensitive && kind == "text" {
                     self.crypto.decrypt(&content).unwrap_or(content)
                 } else {
@@ -149,6 +164,7 @@ impl Database {
                     kind,
                     timestamp,
                     is_sensitive,
+                    is_pinned,
                 })
             })?;
 
@@ -161,7 +177,7 @@ impl Database {
             // Delete them
             conn.execute(
                 &format!(
-                    "DELETE FROM history WHERE id IN (SELECT id FROM history ORDER BY timestamp ASC LIMIT {})",
+                    "DELETE FROM history WHERE id IN (SELECT id FROM history WHERE is_pinned = 0 ORDER BY timestamp ASC LIMIT {})",
                     delete_count
                 ),
                 [],
@@ -180,7 +196,7 @@ impl Database {
         // Get the ID and details of the item at the specified offset
         let item: Option<(i64, ClipboardItem)> = conn
             .query_row(
-                "SELECT id, content, kind, timestamp, is_sensitive FROM history ORDER BY timestamp DESC LIMIT 1 OFFSET ?1",
+                "SELECT id, content, kind, timestamp, is_sensitive, is_pinned FROM history ORDER BY is_pinned DESC, timestamp DESC LIMIT 1 OFFSET ?1",
                 params![index],
                 |row| {
                     let id: i64 = row.get(0)?;
@@ -188,6 +204,7 @@ impl Database {
                     let kind: String = row.get(2)?;
                     let timestamp: String = row.get(3)?;
                     let is_sensitive: bool = row.get(4)?;
+                    let is_pinned: bool = row.get(5)?;
 
                     let final_content = if is_sensitive && kind == "text" {
                         self.crypto.decrypt(&content).unwrap_or(content)
@@ -203,6 +220,7 @@ impl Database {
                             kind,
                             timestamp,
                             is_sensitive,
+                            is_pinned,
                         },
                     ))
                 },
@@ -223,7 +241,7 @@ impl Database {
         // Get item at index
         let item: Option<(i64, String, bool, String)> = conn
             .query_row(
-                "SELECT id, content, is_sensitive, kind FROM history ORDER BY timestamp DESC LIMIT 1 OFFSET ?1",
+                "SELECT id, content, is_sensitive, kind FROM history ORDER BY is_pinned DESC, timestamp DESC LIMIT 1 OFFSET ?1",
                 params![index],
                 |row| {
                     Ok((
@@ -260,18 +278,43 @@ impl Database {
         }
     }
 
+    pub fn toggle_pin(&self, index: usize) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+
+        // Get item at index
+        let item: Option<(i64, bool)> = conn
+            .query_row(
+                "SELECT id, is_pinned FROM history ORDER BY is_pinned DESC, timestamp DESC LIMIT 1 OFFSET ?1",
+                params![index],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+
+        if let Some((id, is_pinned)) = item {
+            let new_state = !is_pinned;
+            conn.execute(
+                "UPDATE history SET is_pinned = ?1 WHERE id = ?2",
+                params![new_state, id],
+            )?;
+            Ok(new_state)
+        } else {
+            Err(rusqlite::Error::QueryReturnedNoRows)
+        }
+    }
+
     pub fn clear_history(&self) -> Result<Vec<ClipboardItem>> {
         let conn = self.conn.lock().unwrap();
 
         // Get all items
-        let mut stmt =
-            conn.prepare("SELECT id, content, kind, timestamp, is_sensitive FROM history")?;
+        let mut stmt = conn
+            .prepare("SELECT id, content, kind, timestamp, is_sensitive, is_pinned FROM history")?;
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
             let content: String = row.get(1)?;
             let kind: String = row.get(2)?;
             let timestamp: String = row.get(3)?;
             let is_sensitive: bool = row.get(4)?;
+            let is_pinned: bool = row.get(5)?;
 
             let final_content = if is_sensitive && kind == "text" {
                 self.crypto.decrypt(&content).unwrap_or(content)
@@ -285,6 +328,7 @@ impl Database {
                 kind,
                 timestamp,
                 is_sensitive,
+                is_pinned,
             })
         })?;
 

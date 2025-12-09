@@ -24,8 +24,28 @@ To improve efficiency, we support multiple navigation methods so your hands don'
   - Vim style `j` (down) / `k` (up)
   - Emacs style `Ctrl+n` (down) / `Ctrl+p` (up)
 - **Confirm/Paste**: Press `Enter` to paste the selected item into the current active window and automatically close the panel.
-- **Preview Details**: Press `Space` to view detailed information of the currently selected item (useful for long text or large images).
+- **Preview Details**: Press `Space` to view detailed information of the currently selected item (useful for long text or large images). Press `Space` again to close the preview.
 - **Close Panel**: Press `Esc`.
+
+## Features
+
+### Pinning Items
+
+You can pin important items to the top of the list. Pinned items will:
+
+- Always stay at the top of the history list.
+- **Not be automatically deleted** even if the history size limit is reached.
+
+To pin an item, hover over it and click the Pin icon, or use the context menu.
+
+### Sensitive Data
+
+You can mark items as "Sensitive". Sensitive items are:
+
+- Encrypted in the database.
+- Blurred in the UI until hovered.
+
+> **Note**: Automatic detection of sensitive content (based on entropy) has been removed to prevent false positives. You can still configure "Sensitive Applications" in settings to ignore clipboard content from specific apps (like password managers).
 
 ## Search Function
 

@@ -18,6 +18,8 @@ import {
   Command,
   CornerDownLeft,
   Plus,
+  Pin,
+  PinOff,
 } from "lucide-vue-next";
 import Button from "@/components/ui/button/Button.vue";
 import Input from "@/components/ui/input/Input.vue";
@@ -44,6 +46,7 @@ const {
   pasteItem,
   deleteItem,
   toggleSensitive,
+  togglePin,
   clearHistory,
   scrollToSelected,
   setupClipboardListeners,
@@ -114,7 +117,9 @@ function handleKeydown(e: KeyboardEvent) {
     }
   } else if (e.key === " ") {
     e.preventDefault();
-    if (filteredHistory.value[selectedIndex.value]) {
+    if (previewItem.value) {
+      previewItem.value = null;
+    } else if (filteredHistory.value[selectedIndex.value]) {
       previewItem.value = filteredHistory.value[selectedIndex.value];
     }
   } else if (e.key === "Escape") {
@@ -239,10 +244,16 @@ onUnmounted(() => {
           <!-- Content -->
           <div class="flex gap-3 items-start">
             <div
-              class="mt-0.5 p-1.5 rounded-md bg-muted text-muted-foreground shrink-0"
+              class="mt-0.5 p-1.5 rounded-md bg-muted text-muted-foreground shrink-0 relative"
             >
               <FileText v-if="item.kind === 'text'" class="w-4 h-4" />
               <ImageIcon v-else class="w-4 h-4" />
+              <div
+                v-if="item.is_pinned"
+                class="absolute -top-1 -right-1 bg-primary text-primary-foreground rounded-full p-0.5 shadow-sm"
+              >
+                <Pin class="w-2 h-2" />
+              </div>
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex justify-between items-baseline mb-0.5">
@@ -276,7 +287,21 @@ onUnmounted(() => {
           <!-- Hover Actions -->
           <div
             class="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border"
+            @click.stop
           >
+            <Button
+              @click.stop="togglePin(index)"
+              size="icon"
+              variant="ghost"
+              class="h-6 w-6"
+              :class="item.is_pinned ? 'text-primary' : 'text-muted-foreground'"
+              :title="item.is_pinned ? t('actions.unpin') : t('actions.pin')"
+            >
+              <component
+                :is="item.is_pinned ? PinOff : Pin"
+                class="w-3.5 h-3.5"
+              />
+            </Button>
             <Button
               @click.stop="toggleSensitive(index)"
               size="icon"

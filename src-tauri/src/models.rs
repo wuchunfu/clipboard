@@ -8,6 +8,8 @@ pub struct ClipboardItem {
     pub timestamp: String,
     #[serde(default)]
     pub is_sensitive: bool,
+    #[serde(default)]
+    pub is_pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

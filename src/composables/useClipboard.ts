@@ -151,6 +151,25 @@ export function useClipboard() {
     }
   }
 
+  async function togglePin(index: number) {
+    const item = filteredHistory.value[index];
+    const realIndex = history.value.indexOf(item);
+
+    if (realIndex !== -1) {
+      try {
+        const newState = await invoke<boolean>("toggle_pin", {
+          index: realIndex,
+        });
+        history.value[realIndex].is_pinned = newState as boolean;
+        // Reload history to reflect sorting changes
+        await loadHistory();
+        showToast(newState ? t("toast.pinned") : t("toast.unpinned"));
+      } catch (e) {
+        console.error("Failed to toggle pin:", e);
+      }
+    }
+  }
+
   async function clearHistory() {
     try {
       await invoke("clear_history");
@@ -197,6 +216,7 @@ export function useClipboard() {
     pasteItem,
     deleteItem,
     toggleSensitive,
+    togglePin,
     clearHistory,
     getImageSrc,
     scrollToSelected,
