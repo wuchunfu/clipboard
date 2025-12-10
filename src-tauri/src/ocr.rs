@@ -71,7 +71,68 @@ pub fn recognize_text(image_path: &str) -> Result<String, String> {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+use windows::{
+    core::HSTRING,
+    Graphics::Imaging::BitmapDecoder,
+    Media::Ocr::OcrEngine,
+    Storage::{FileAccessMode, StorageFile},
+};
+
+#[cfg(target_os = "windows")]
+pub fn recognize_text(image_path: &str) -> Result<String, String> {
+    tauri::async_runtime::block_on(async move { recognize_text_async(image_path).await })
+}
+
+#[cfg(target_os = "windows")]
+async fn recognize_text_async(image_path: &str) -> Result<String, String> {
+    let path = std::path::Path::new(image_path);
+    let absolute_path = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
+    let path_string = absolute_path.to_string_lossy().to_string();
+
+    let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(&path_string))
+        .map_err(|e| e.to_string())?
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let stream = file
+        .OpenAsync(FileAccessMode::Read)
+        .map_err(|e| e.to_string())?
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let decoder = BitmapDecoder::CreateAsync(&stream)
+        .map_err(|e| e.to_string())?
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let bitmap = decoder
+        .GetSoftwareBitmapAsync()
+        .map_err(|e| e.to_string())?
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let engine = OcrEngine::TryCreateFromUserProfileLanguages().map_err(|e| e.to_string())?;
+
+    let result = engine
+        .RecognizeAsync(&bitmap)
+        .map_err(|e| e.to_string())?
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let lines = result.Lines().map_err(|e| e.to_string())?;
+    let mut full_text = String::new();
+
+    for line in lines {
+        let text = line.Text().map_err(|e| e.to_string())?;
+        full_text.push_str(&text.to_string_lossy());
+        full_text.push('\n');
+    }
+
+    Ok(full_text.trim().to_string())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn recognize_text(_image_path: &str) -> Result<String, String> {
-    Err("OCR is only supported on macOS".to_string())
+    Err("OCR is only supported on macOS and Windows".to_string())
 }

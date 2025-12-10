@@ -43,7 +43,7 @@ We understand the sensitivity of clipboard data:
 ### 🚀 Advanced Productivity
 
 - **Paste Stack**: Copy multiple items and paste them sequentially in a specific order. Perfect for form filling.
-- **OCR (macOS)**: Extract text directly from images in your clipboard history.
+- **OCR**: Extract text directly from images in your clipboard history (macOS & Windows).
 
 ## 🌍 Cross-Platform & Internationalization
 

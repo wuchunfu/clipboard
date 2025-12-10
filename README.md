@@ -20,7 +20,7 @@ A lightweight, secure, and modern clipboard manager built with **Rust (Tauri v2)
 - **📌 Pinning**: Pin important items to the top of the list to prevent them from being auto-deleted.
 - **⚡ Performance**: Optimized for large text content with lazy loading.
 - **📚 Paste Stack**: Copy multiple items in sequence and paste them in order (FIFO/LIFO).
-- **📝 OCR (macOS)**: Extract text from images directly within the app.
+- **📝 OCR**: Extract text from images directly within the app (macOS & Windows).
 - **📏 Compact Mode**: A dense view for power users to see more items at once.
 - **⌨️ Keyboard Driven**: Vim-like navigation (`j`/`k`) and global shortcuts.
 - **🌍 Internationalization**: Support for English and Chinese (简体中文).

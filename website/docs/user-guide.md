@@ -45,7 +45,7 @@ The Paste Stack allows you to copy multiple items and paste them in a specific o
 
 ### OCR (Text Extraction)
 
-> **Note**: Currently available on macOS only.
+> **Note**: Currently available on macOS and Windows.
 
 You can extract text from images stored in your clipboard history.
 

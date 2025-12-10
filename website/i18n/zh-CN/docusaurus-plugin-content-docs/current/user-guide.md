@@ -45,7 +45,7 @@ sidebar_position: 3
 
 ### OCR (文字识别)
 
-> **注意**: 目前仅支持 macOS。
+> **注意**: 目前支持 macOS 和 Windows。
 
 你可以直接从剪贴板历史记录中的图片提取文字。
 
