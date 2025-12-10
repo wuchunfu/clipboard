@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n } from "vue-i18n";
@@ -20,6 +20,7 @@ import {
   Phone,
   Code,
   ScanText,
+  Folder,
 } from "lucide-vue-next";
 import Button from "@/components/ui/button/Button.vue";
 import Input from "@/components/ui/input/Input.vue";
@@ -50,9 +51,13 @@ const {
   toggleSelection,
   pasteStack,
   ocrImage,
+  collections,
+  activeCollectionId,
+  loadCollections,
 } = useClipboard();
 
 const { config, loadConfig, setupConfigListeners } = useSettings();
+const isSelectingCollection = ref(false);
 
 function getItemIcon(item: any) {
   if (item.kind === "image") return ImageIcon;
@@ -140,6 +145,7 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   await loadConfig();
+  await loadCollections();
   await loadHistory(true);
   await setupClipboardListeners();
   await setupConfigListeners();
@@ -147,6 +153,7 @@ onMounted(async () => {
 
   // Focus search on show
   await listen("tauri://focus", () => {
+    loadCollections();
     loadHistory(true);
   });
 });
@@ -161,211 +168,262 @@ onUnmounted(() => {
     class="h-screen w-screen bg-background/60 text-foreground flex flex-col overflow-hidden select-none"
   >
     <!-- Header -->
-    <div class="border-b border-border bg-card/40 backdrop-blur-md p-2">
+    <div
+      class="border-b border-border bg-card/40 backdrop-blur-md p-2 flex gap-2 items-center"
+    >
       <!-- Search Bar -->
-      <div class="relative">
+      <div class="relative flex-1">
         <Search
           class="absolute left-2 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground"
         />
         <Input
           v-model="searchQuery"
           class="w-full pl-8 h-7 text-xs"
-          :placeholder="t('searchPlaceholder')"
+          :placeholder="
+            activeCollectionId
+              ? collections.find((c) => c.id === activeCollectionId)?.name
+              : t('searchPlaceholder')
+          "
         />
       </div>
+      <Button
+        size="icon"
+        variant="ghost"
+        class="h-7 w-7 shrink-0"
+        :class="{
+          'bg-accent text-accent-foreground':
+            isSelectingCollection || activeCollectionId,
+        }"
+        @click="isSelectingCollection = !isSelectingCollection"
+        :title="t('collections.collections')"
+      >
+        <Folder class="w-4 h-4" />
+      </Button>
     </div>
 
     <!-- List -->
     <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-      <div
-        v-for="(item, index) in filteredHistory"
-        :key="item.timestamp"
-        class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer"
-        :class="[
-          index === selectedIndex
-            ? 'bg-accent border-primary/20 selected-item'
-            : '',
-          item.id && selectedIds.includes(item.id)
-            ? 'border-primary bg-accent/30'
-            : '',
-          config.compact_mode ? 'p-1.5' : 'p-2',
-        ]"
-        @click="handleItemClick(item, $event)"
-        @mouseenter="selectedIndex = index"
-      >
-        <!-- Selection Badge -->
+      <template v-if="isSelectingCollection">
         <div
-          v-if="item.id && selectedIds.includes(item.id)"
-          class="absolute -top-1 -left-1 bg-primary text-primary-foreground text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center z-20 shadow-sm"
+          class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer p-2 flex items-center gap-2"
+          :class="{
+            'bg-accent border-primary/20': activeCollectionId === null,
+          }"
+          @click="
+            activeCollectionId = null;
+            isSelectingCollection = false;
+          "
         >
-          {{ selectedIds.indexOf(item.id) + 1 }}
+          <Folder class="w-4 h-4 text-muted-foreground" />
+          <span class="text-sm font-medium">{{ t("filters.all") }}</span>
         </div>
-
-        <!-- Content -->
         <div
-          class="flex gap-3"
-          :class="config.compact_mode ? 'items-center' : 'items-start'"
+          v-for="collection in collections"
+          :key="collection.id"
+          class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer p-2 flex items-center gap-2"
+          :class="{
+            'bg-accent border-primary/20': activeCollectionId === collection.id,
+          }"
+          @click="
+            activeCollectionId = collection.id;
+            isSelectingCollection = false;
+          "
         >
+          <Folder class="w-4 h-4 text-primary" />
+          <span class="text-sm font-medium">{{ collection.name }}</span>
+        </div>
+      </template>
+      <template v-else>
+        <div
+          v-for="(item, index) in filteredHistory"
+          :key="item.timestamp"
+          class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer"
+          :class="[
+            index === selectedIndex
+              ? 'bg-accent border-primary/20 selected-item'
+              : '',
+            item.id && selectedIds.includes(item.id)
+              ? 'border-primary bg-accent/30'
+              : '',
+            config.compact_mode ? 'p-1.5' : 'p-2',
+          ]"
+          @click="handleItemClick(item, $event)"
+          @mouseenter="selectedIndex = index"
+        >
+          <!-- Selection Badge -->
           <div
-            class="rounded-md bg-muted text-muted-foreground shrink-0 relative flex items-center justify-center"
-            :class="
-              config.compact_mode ? 'w-6 h-6 p-1' : 'w-7 h-7 mt-0.5 p-1.5'
-            "
+            v-if="item.id && selectedIds.includes(item.id)"
+            class="absolute -top-1 -left-1 bg-primary text-primary-foreground text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center z-20 shadow-sm"
           >
-            <component
-              :is="getItemIcon(item)"
-              :class="config.compact_mode ? 'w-3.5 h-3.5' : 'w-4 h-4'"
-            />
-            <div
-              v-if="item.is_pinned"
-              class="absolute -bottom-1 -right-1 bg-primary text-primary-foreground rounded-full p-0.5 shadow-sm"
-            >
-              <Pin class="w-2 h-2" />
-            </div>
+            {{ selectedIds.indexOf(item.id) + 1 }}
           </div>
-          <div class="flex-1 min-w-0">
-            <div
-              v-if="!config.compact_mode"
-              class="flex justify-between items-baseline mb-0.5"
-            >
-              <span
-                class="text-[10px] font-mono text-muted-foreground opacity-70"
-                >{{ formatTimeAgo(item.timestamp) }}</span
-              >
-            </div>
 
+          <!-- Content -->
+          <div
+            class="flex gap-3"
+            :class="config.compact_mode ? 'items-center' : 'items-start'"
+          >
             <div
-              v-if="config.compact_mode"
-              class="flex items-center justify-between gap-2"
-              :class="{ 'pr-6': index < 9 }"
+              class="rounded-md bg-muted text-muted-foreground shrink-0 relative flex items-center justify-center"
+              :class="
+                config.compact_mode ? 'w-6 h-6 p-1' : 'w-7 h-7 mt-0.5 p-1.5'
+              "
             >
-              <p
-                v-if="item.kind === 'text'"
-                class="text-xs text-foreground line-clamp-1 break-all font-medium flex-1"
-                :class="{
-                  'blur-sm group-hover:blur-none transition-all':
-                    item.is_sensitive,
-                }"
+              <component
+                :is="getItemIcon(item)"
+                :class="config.compact_mode ? 'w-3.5 h-3.5' : 'w-4 h-4'"
+              />
+              <div
+                v-if="item.is_pinned"
+                class="absolute -bottom-1 -right-1 bg-primary text-primary-foreground rounded-full p-0.5 shadow-sm"
               >
-                {{ item.content }}
-              </p>
-              <div v-else class="flex items-center gap-2 flex-1">
-                <span class="text-xs text-muted-foreground italic"
-                  >[Image]</span
+                <Pin class="w-2 h-2" />
+              </div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div
+                v-if="!config.compact_mode"
+                class="flex justify-between items-baseline mb-0.5"
+              >
+                <span
+                  class="text-[10px] font-mono text-muted-foreground opacity-70"
+                  >{{ formatTimeAgo(item.timestamp) }}</span
                 >
               </div>
-              <span
-                class="text-[9px] font-mono text-muted-foreground opacity-50 shrink-0"
-                >{{ formatTimeAgo(item.timestamp) }}</span
-              >
-            </div>
 
-            <template v-else>
-              <p
-                v-if="item.kind === 'text'"
-                class="text-sm text-foreground line-clamp-2 break-all font-medium"
-                :class="{
-                  'blur-sm group-hover:blur-none transition-all':
-                    item.is_sensitive,
-                }"
-              >
-                {{ item.content }}
-              </p>
               <div
-                v-else
-                class="h-16 w-full rounded-md overflow-hidden bg-muted/50 border border-border mt-1"
+                v-if="config.compact_mode"
+                class="flex items-center justify-between gap-2"
+                :class="{ 'pr-6': index < 9 }"
               >
-                <LocalImage
-                  :src="item.content"
-                  class="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-                />
+                <p
+                  v-if="item.kind === 'text'"
+                  class="text-xs text-foreground line-clamp-1 break-all font-medium flex-1"
+                  :class="{
+                    'blur-sm group-hover:blur-none transition-all':
+                      item.is_sensitive,
+                  }"
+                >
+                  {{ item.content }}
+                </p>
+                <div v-else class="flex items-center gap-2 flex-1">
+                  <span class="text-xs text-muted-foreground italic"
+                    >[Image]</span
+                  >
+                </div>
+                <span
+                  class="text-[9px] font-mono text-muted-foreground opacity-50 shrink-0"
+                  >{{ formatTimeAgo(item.timestamp) }}</span
+                >
               </div>
-            </template>
+
+              <template v-else>
+                <p
+                  v-if="item.kind === 'text'"
+                  class="text-sm text-foreground line-clamp-2 break-all font-medium"
+                  :class="{
+                    'blur-sm group-hover:blur-none transition-all':
+                      item.is_sensitive,
+                  }"
+                >
+                  {{ item.content }}
+                </p>
+                <div
+                  v-else
+                  class="h-16 w-full rounded-md overflow-hidden bg-muted/50 border border-border mt-1"
+                >
+                  <LocalImage
+                    :src="item.content"
+                    class="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                  />
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Hover Actions -->
+          <div
+            class="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border z-20"
+            @click.stop
+          >
+            <Button
+              @click.stop="togglePin(index)"
+              size="icon"
+              variant="ghost"
+              class="h-6 w-6"
+              :class="item.is_pinned ? 'text-primary' : 'text-muted-foreground'"
+              :title="item.is_pinned ? t('actions.unpin') : t('actions.pin')"
+            >
+              <component
+                :is="item.is_pinned ? PinOff : Pin"
+                class="w-3.5 h-3.5"
+              />
+            </Button>
+            <Button
+              @click.stop="toggleSensitive(index)"
+              size="icon"
+              variant="ghost"
+              class="h-6 w-6"
+              :class="
+                item.is_sensitive ? 'text-yellow-500' : 'text-muted-foreground'
+              "
+              :title="
+                item.is_sensitive
+                  ? t('actions.sensitiveTooltip')
+                  : t('actions.markSensitive')
+              "
+            >
+              <component
+                :is="item.is_sensitive ? Lock : Unlock"
+                class="w-3.5 h-3.5"
+              />
+            </Button>
+            <Button
+              @click.stop="previewItem = item"
+              size="icon"
+              variant="ghost"
+              class="h-6 w-6 text-muted-foreground hover:text-primary"
+              :title="t('actions.preview')"
+            >
+              <Eye class="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              @click.stop="deleteItem(index)"
+              size="icon"
+              variant="ghost"
+              class="h-6 w-6 text-muted-foreground hover:text-destructive"
+              :title="t('actions.delete')"
+            >
+              <X class="w-3.5 h-3.5" />
+            </Button>
+          </div>
+
+          <!-- Status / Shortcuts (Visible when NOT hovering) -->
+          <div
+            class="absolute top-2 right-2 flex gap-2 items-center opacity-100 group-hover:opacity-0 transition-opacity pointer-events-none"
+          >
+            <!-- Number Shortcut -->
+            <span
+              v-if="index < 9"
+              class="flex items-center justify-center w-4 h-4 bg-muted/50 text-muted-foreground rounded border border-border/50 text-[9px] font-mono shadow-sm"
+            >
+              {{ index + 1 }}
+            </span>
+
+            <!-- Sensitive Lock -->
+            <Lock v-if="item.is_sensitive" class="w-3 h-3 text-yellow-600/50" />
           </div>
         </div>
 
-        <!-- Hover Actions -->
         <div
-          class="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border z-20"
-          @click.stop
+          v-if="filteredHistory.length === 0"
+          class="flex flex-col items-center justify-center h-40 text-muted-foreground"
         >
-          <Button
-            @click.stop="togglePin(index)"
-            size="icon"
-            variant="ghost"
-            class="h-6 w-6"
-            :class="item.is_pinned ? 'text-primary' : 'text-muted-foreground'"
-            :title="item.is_pinned ? t('actions.unpin') : t('actions.pin')"
-          >
-            <component
-              :is="item.is_pinned ? PinOff : Pin"
-              class="w-3.5 h-3.5"
-            />
-          </Button>
-          <Button
-            @click.stop="toggleSensitive(index)"
-            size="icon"
-            variant="ghost"
-            class="h-6 w-6"
-            :class="
-              item.is_sensitive ? 'text-yellow-500' : 'text-muted-foreground'
-            "
-            :title="
-              item.is_sensitive
-                ? t('actions.sensitiveTooltip')
-                : t('actions.markSensitive')
-            "
-          >
-            <component
-              :is="item.is_sensitive ? Lock : Unlock"
-              class="w-3.5 h-3.5"
-            />
-          </Button>
-          <Button
-            @click.stop="previewItem = item"
-            size="icon"
-            variant="ghost"
-            class="h-6 w-6 text-muted-foreground hover:text-primary"
-            :title="t('actions.preview')"
-          >
-            <Eye class="w-3.5 h-3.5" />
-          </Button>
-          <Button
-            @click.stop="deleteItem(index)"
-            size="icon"
-            variant="ghost"
-            class="h-6 w-6 text-muted-foreground hover:text-destructive"
-            :title="t('actions.delete')"
-          >
-            <X class="w-3.5 h-3.5" />
-          </Button>
+          <Command class="w-8 h-8 mb-2 opacity-20" />
+          <p class="text-sm">{{ t("emptyState.title") }}</p>
+          <p class="text-xs opacity-50 mt-1">{{ t("emptyState.subtitle") }}</p>
         </div>
-
-        <!-- Status / Shortcuts (Visible when NOT hovering) -->
-        <div
-          class="absolute top-2 right-2 flex gap-2 items-center opacity-100 group-hover:opacity-0 transition-opacity pointer-events-none"
-        >
-          <!-- Number Shortcut -->
-          <span
-            v-if="index < 9"
-            class="flex items-center justify-center w-4 h-4 bg-muted/50 text-muted-foreground rounded border border-border/50 text-[9px] font-mono shadow-sm"
-          >
-            {{ index + 1 }}
-          </span>
-
-          <!-- Sensitive Lock -->
-          <Lock v-if="item.is_sensitive" class="w-3 h-3 text-yellow-600/50" />
-        </div>
-      </div>
-
-      <div
-        v-if="filteredHistory.length === 0"
-        class="flex flex-col items-center justify-center h-40 text-muted-foreground"
-      >
-        <Command class="w-8 h-8 mb-2 opacity-20" />
-        <p class="text-sm">{{ t("emptyState.title") }}</p>
-        <p class="text-xs opacity-50 mt-1">{{ t("emptyState.subtitle") }}</p>
-      </div>
+      </template>
     </div>
 
     <!-- Footer -->

@@ -1,39 +1,52 @@
 use crate::models::ClipboardItem;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-use tauri::Wry;
+use tauri::{Manager, Wry};
 
-pub fn create_history_menu(
-    app: &tauri::AppHandle,
-    history: &[ClipboardItem],
-) -> Result<Menu<Wry>, String> {
+pub fn create_tray_menu(app: &tauri::AppHandle) -> Result<Menu<Wry>, String> {
     let menu = Menu::new(app).map_err(|e| e.to_string())?;
 
-    // Add "Show History" item
-    let show_item = MenuItem::with_id(app, "show", "Show History", true, None::<&str>)
+    // Show Main Window
+    let show_item = MenuItem::with_id(app, "show", "Show Main Window", true, None::<&str>)
         .map_err(|e| e.to_string())?;
     menu.append(&show_item).map_err(|e| e.to_string())?;
 
     menu.append(&PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
 
-    for (i, item) in history.iter().take(10).enumerate() {
-        let mut title = if item.kind == "text" {
-            item.content.chars().take(20).collect::<String>()
-        } else {
-            format!("Image {}", item.timestamp)
-        };
-        if item.kind == "text" && item.content.chars().count() > 20 {
-            title.push_str("...");
-        }
+    // Pause/Resume
+    let pause_item = MenuItem::with_id(app, "pause", "Pause Recording", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    menu.append(&pause_item).map_err(|e| e.to_string())?;
 
-        let menu_item =
-            MenuItem::with_id(app, format!("history_{}", i), &title, true, None::<&str>)
-                .map_err(|e| e.to_string())?;
-        menu.append(&menu_item).map_err(|e| e.to_string())?;
-    }
+    // Clear History
+    let clear_item = MenuItem::with_id(app, "clear", "Clear History", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    menu.append(&clear_item).map_err(|e| e.to_string())?;
 
     menu.append(&PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
+
+    // Settings
+    let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    menu.append(&settings_item).map_err(|e| e.to_string())?;
+
+    // Check for Updates
+    let version = app.package_info().version.to_string();
+    let update_item = MenuItem::with_id(
+        app,
+        "check_update",
+        format!("v{}", version),
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    menu.append(&update_item).map_err(|e| e.to_string())?;
+
+    menu.append(&PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+
+    // Quit
     menu.append(
         &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>).map_err(|e| e.to_string())?,
     )
@@ -42,14 +55,22 @@ pub fn create_history_menu(
     Ok(menu)
 }
 
-pub fn update_tray_menu(app: &tauri::AppHandle, history: &[ClipboardItem]) -> Result<(), String> {
-    let tray = if let Some(tray) = app.tray_by_id("tray") {
-        tray
-    } else {
-        return Ok(()); // Tray might not be ready yet
-    };
+pub fn update_tray_menu(_app: &tauri::AppHandle, _history: &[ClipboardItem]) -> Result<(), String> {
+    // No longer updating tray menu with history
+    Ok(())
+}
 
-    let menu = create_history_menu(app, history)?;
-    tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+pub fn update_pause_menu_item(app: &tauri::AppHandle, is_paused: bool) -> Result<(), String> {
+    let state = app.state::<crate::state::AppState>();
+    if let Ok(pause_item) = state.pause_item.lock() {
+        if let Some(item) = pause_item.as_ref() {
+            let text = if is_paused {
+                "Resume Recording"
+            } else {
+                "Pause Recording"
+            };
+            item.set_text(text).map_err(|e| e.to_string())?;
+        }
+    }
     Ok(())
 }

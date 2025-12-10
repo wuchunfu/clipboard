@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::tray::TrayIconBuilder;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
@@ -24,8 +24,8 @@ use crate::db::Database;
 use crate::models::{AppConfig, ClipboardItem};
 use crate::monitor::ClipboardMonitor;
 use crate::state::AppState;
-use crate::tray::create_history_menu;
 use crate::utils::write_to_clipboard;
+use tauri_plugin_updater::UpdaterExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -188,13 +188,25 @@ pub fn run() {
                 last_app_change: last_app_change_state.clone(),
                 last_app_image_change: last_app_image_change_state.clone(),
                 paste_stack: paste_stack_state.clone(),
+                pause_item: Arc::new(Mutex::new(None)),
             });
 
             // 托盘设置
-            let menu = {
-                let history = db.get_history(1, 20, None, None).unwrap_or_default();
-                create_history_menu(app.handle(), &history).unwrap()
-            };
+            let menu = crate::tray::create_tray_menu(app.handle()).unwrap();
+
+            // Store pause item in state
+            if let Ok(items) = menu.items() {
+                if let Some(item) = items
+                    .iter()
+                    .find(|i| i.id() == "pause")
+                    .and_then(|i| i.as_menuitem())
+                {
+                    let state = app.state::<AppState>();
+                    if let Ok(mut pause_item) = state.pause_item.lock() {
+                        *pause_item = Some(item.clone());
+                    };
+                }
+            }
 
             let _tray = TrayIconBuilder::with_id("tray")
                 .icon(
@@ -213,32 +225,50 @@ pub fn run() {
                             let _ = window.set_focus();
                         }
                     }
-                    id if id.starts_with("history_") => {
-                        if let Ok(index) = id.replace("history_", "").parse::<usize>() {
-                            let state = app.state::<AppState>();
-                            if let Ok(history) = state.db.get_history(1, 20, None, None) {
-                                if let Some(item) = history.get(index) {
-                                    // Prevent duplication in monitor
-                                    if let Ok(mut last_change) = state.last_app_change.lock() {
-                                        *last_change = Some(item.content.clone());
-                                    }
-
-                                    let _ = write_to_clipboard(app, item);
-
-                                    // Update timestamp to move to top
-                                    if let Some(id) = item.id {
-                                        let _ = state.db.update_timestamp(id);
-                                        // Refresh tray to show new order
-                                        if let Ok(new_history) =
-                                            state.db.get_history(1, 20, None, None)
+                    "pause" => {
+                        let state = app.state::<AppState>();
+                        let is_paused = state.is_paused.clone();
+                        if let Ok(mut paused) = is_paused.lock() {
+                            *paused = !*paused;
+                            log::info!("Pause state toggled: {}", *paused);
+                            let _ = app.emit("pause-state-changed", *paused);
+                            let _ = crate::tray::update_pause_menu_item(app, *paused);
+                        };
+                    }
+                    "clear" => {
+                        let state = app.state::<AppState>();
+                        if let Ok(_) = state.db.clear_history() {
+                            log::info!("History cleared from tray");
+                        }
+                    }
+                    "settings" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                            let _ = window.emit("open-settings", ());
+                        }
+                    }
+                    "check_update" => {
+                        let handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            if let Ok(updater) = handle.updater() {
+                                match updater.check().await {
+                                    Ok(Some(update)) => {
+                                        if let Err(e) =
+                                            update.download_and_install(|_, _| {}, || {}).await
                                         {
-                                            let _ =
-                                                crate::tray::update_tray_menu(app, &new_history);
+                                            log::error!("Failed to install update: {}", e);
                                         }
+                                    }
+                                    Ok(None) => {
+                                        log::info!("No update available");
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to check for updates: {}", e);
                                     }
                                 }
                             }
-                        }
+                        });
                     }
                     _ => {}
                 })

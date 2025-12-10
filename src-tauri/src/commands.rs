@@ -6,7 +6,7 @@ use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use crate::models::{AppConfig, ClipboardItem, Collection};
 use crate::ocr::recognize_text;
 use crate::state::AppState;
-use crate::tray::update_tray_menu;
+use crate::tray::{update_pause_menu_item, update_tray_menu};
 use crate::utils::{classify_content, write_to_clipboard};
 
 #[tauri::command]
@@ -254,9 +254,11 @@ pub fn save_config(
 }
 
 #[tauri::command]
-pub fn set_paused(paused: bool, state: tauri::State<AppState>) {
+pub fn set_paused(app: tauri::AppHandle, paused: bool, state: tauri::State<AppState>) {
     let mut is_paused = state.is_paused.lock().unwrap();
     *is_paused = paused;
+    let _ = app.emit("pause-state-changed", paused);
+    let _ = update_pause_menu_item(&app, paused);
 }
 
 #[tauri::command]

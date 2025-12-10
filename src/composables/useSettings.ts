@@ -69,6 +69,9 @@ export function useSettings() {
 
       // Apply theme
       applyTheme(config.value.theme || "auto");
+
+      // Load paused state
+      isPaused.value = await invoke<boolean>("get_paused");
     } catch (e) {
       console.error("Failed to load config:", e);
     }
@@ -182,6 +185,12 @@ export function useSettings() {
   async function setupConfigListeners() {
     await listen("config-updated", () => {
       loadConfig();
+    });
+    await listen("open-settings", () => {
+      openSettings();
+    });
+    await listen("pause-state-changed", (event) => {
+      isPaused.value = event.payload as boolean;
     });
   }
 
