@@ -27,6 +27,41 @@ To improve efficiency, we support multiple navigation methods so your hands don'
 - **Preview Details**: Press `Space` to view detailed information of the currently selected item (useful for long text or large images). Press `Space` again to close the preview.
 - **Close Panel**: Press `Esc`.
 
+## Advanced Features
+
+### Paste Stack (Queue)
+
+The Paste Stack allows you to copy multiple items and paste them in a specific order. This is extremely useful for filling out forms or moving data between applications.
+
+1.  **Select Items**:
+    - **Keyboard**: Navigate to an item and press `x` to select/deselect it.
+    - **Mouse**: Hold `Cmd` (macOS) or `Ctrl` (Windows) and click on items.
+    - A numbered badge (e.g., ①, ②) will appear on selected items indicating the paste order.
+2.  **Start Queue**: Press `Enter`. The first item will be copied to your clipboard, and the window will close.
+3.  **Paste Sequentially**:
+    - Paste the first item (`Cmd+V`).
+    - Press the **Global Shortcut** (default `Cmd+Shift+V`) to automatically copy the _next_ item in the queue.
+    - Repeat until the queue is empty.
+
+### OCR (Text Extraction)
+
+> **Note**: Currently available on macOS only.
+
+You can extract text from images stored in your clipboard history.
+
+1.  Select an image item in the list.
+2.  Press `Space` to open the preview.
+3.  Click the **"Extract Text"** button at the bottom right.
+4.  The extracted text will be copied to your clipboard and added as a new text item in your history.
+
+### Compact Mode
+
+For users who prefer a denser information view, you can enable **Compact Mode** in Settings. This mode:
+
+- Reduces the height of each list item.
+- Hides image previews in the list (showing `[Image]` text instead).
+- Displays more items on the screen at once.
+
 ## Features
 
 ### Pinning Items

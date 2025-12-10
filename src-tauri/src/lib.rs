@@ -3,6 +3,7 @@ mod crypto;
 mod db;
 mod models;
 mod monitor;
+mod ocr;
 mod state;
 mod tray;
 mod utils;
@@ -14,11 +15,13 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::tray::TrayIconBuilder;
 use tauri::Manager;
+#[cfg(target_os = "macos")]
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
 use crate::commands::*;
 use crate::crypto::Crypto;
 use crate::db::Database;
-use crate::models::AppConfig;
+use crate::models::{AppConfig, ClipboardItem};
 use crate::monitor::ClipboardMonitor;
 use crate::state::AppState;
 use crate::tray::create_history_menu;
@@ -56,6 +59,8 @@ pub fn run() {
     let last_app_change_state = last_app_change.clone();
     let last_app_image_change = Arc::new(Mutex::new(None));
     let last_app_image_change_state = last_app_image_change.clone();
+    let paste_stack = Arc::new(Mutex::new(Vec::<ClipboardItem>::new()));
+    let paste_stack_state = paste_stack.clone();
 
     tauri::Builder::default()
         .plugin(
@@ -64,6 +69,16 @@ pub fn run() {
                 .expect("Failed to register shortcut")
                 .with_handler(|app, _shortcut, event| {
                     if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        // Check Paste Stack
+                        let state = app.state::<AppState>();
+                        if let Ok(mut stack) = state.paste_stack.lock() {
+                            if !stack.is_empty() {
+                                let item = stack.remove(0);
+                                let _ = write_to_clipboard(app, &item);
+                                return;
+                            }
+                        }
+
                         if let Some(window) = app.get_webview_window("popup") {
                             let is_visible = window.is_visible().unwrap_or(false);
                             if is_visible {
@@ -144,6 +159,12 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, None);
+                }
+                if let Some(window) = app.get_webview_window("popup") {
+                    let _ = apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, None);
+                }
             }
 
             let handle = app.handle().clone();
@@ -166,11 +187,12 @@ pub fn run() {
                 is_paused: is_paused_state.clone(),
                 last_app_change: last_app_change_state.clone(),
                 last_app_image_change: last_app_image_change_state.clone(),
+                paste_stack: paste_stack_state.clone(),
             });
 
             // 托盘设置
             let menu = {
-                let history = db.get_history(1, 20).unwrap_or_default();
+                let history = db.get_history(1, 20, None, None).unwrap_or_default();
                 create_history_menu(app.handle(), &history).unwrap()
             };
 
@@ -194,7 +216,7 @@ pub fn run() {
                     id if id.starts_with("history_") => {
                         if let Ok(index) = id.replace("history_", "").parse::<usize>() {
                             let state = app.state::<AppState>();
-                            if let Ok(history) = state.db.get_history(1, 20) {
+                            if let Ok(history) = state.db.get_history(1, 20, None, None) {
                                 if let Some(item) = history.get(index) {
                                     // Prevent duplication in monitor
                                     if let Ok(mut last_change) = state.last_app_change.lock() {
@@ -207,7 +229,9 @@ pub fn run() {
                                     if let Some(id) = item.id {
                                         let _ = state.db.update_timestamp(id);
                                         // Refresh tray to show new order
-                                        if let Ok(new_history) = state.db.get_history(1, 20) {
+                                        if let Ok(new_history) =
+                                            state.db.get_history(1, 20, None, None)
+                                        {
                                             let _ =
                                                 crate::tray::update_tray_menu(app, &new_history);
                                         }
@@ -253,7 +277,13 @@ pub fn run() {
             set_paused,
             get_paused,
             get_item_content,
-            get_history_count
+            get_history_count,
+            create_collection,
+            get_collections,
+            delete_collection,
+            set_item_collection,
+            set_paste_stack,
+            ocr_image
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {

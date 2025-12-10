@@ -7,6 +7,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use crate::models::ClipboardItem;
 use crate::state::AppState;
 use crate::tray::update_tray_menu;
+use crate::utils::classify_content;
 
 pub struct ClipboardMonitor {
     pub app_handle: tauri::AppHandle,
@@ -49,7 +50,9 @@ impl ClipboardHandler for ClipboardMonitor {
         }
 
         // Check active application
+        let mut source_app = None;
         if let Ok(active_window) = get_active_window() {
+            log::info!("Active window app: {}", active_window.app_name);
             if self.is_password_manager(&active_window.app_name) {
                 log::info!(
                     "Ignored clipboard change from sensitive app: {}",
@@ -57,6 +60,9 @@ impl ClipboardHandler for ClipboardMonitor {
                 );
                 return CallbackResult::Next;
             }
+            source_app = Some(active_window.app_name);
+        } else {
+            log::warn!("Failed to get active window");
         }
 
         let mut updated = false;
@@ -79,6 +85,7 @@ impl ClipboardHandler for ClipboardMonitor {
             if text != self.last_text && !text.is_empty() {
                 self.last_text = text.clone();
                 let is_sensitive = false;
+                let data_type = classify_content(&text);
 
                 let item = ClipboardItem {
                     id: None,
@@ -87,6 +94,9 @@ impl ClipboardHandler for ClipboardMonitor {
                     timestamp: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
                     is_sensitive,
                     is_pinned: false,
+                    source_app: source_app.clone(),
+                    data_type,
+                    collection_id: None,
                 };
 
                 match state.db.insert_item(&item, max_size) {
@@ -154,6 +164,9 @@ impl ClipboardHandler for ClipboardMonitor {
                             timestamp: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
                             is_sensitive: false,
                             is_pinned: false,
+                            source_app: source_app.clone(),
+                            data_type: "image".to_string(),
+                            collection_id: None,
                         };
 
                         match state.db.insert_item(&item, max_size) {
@@ -180,7 +193,7 @@ impl ClipboardHandler for ClipboardMonitor {
         }
 
         if updated {
-            let history = state.db.get_history(1, 20).unwrap_or_default();
+            let history = state.db.get_history(1, 20, None, None).unwrap_or_default();
             if let Err(e) = update_tray_menu(&self.app_handle, &history) {
                 log::error!("Failed to update tray: {}", e);
             }

@@ -16,6 +16,7 @@ export function useSettings() {
     language: "auto",
     theme: "auto",
     sensitive_apps: [],
+    compact_mode: false,
   });
 
   const showSettings = ref(false);
@@ -24,6 +25,7 @@ export function useSettings() {
   const tempLanguage = ref("auto");
   const tempTheme = ref("auto");
   const tempSensitiveApps = ref<string[]>([]);
+  const tempCompactMode = ref(false);
   const isRecording = ref(false);
   const isPaused = ref(false);
   const isAutoStart = ref(false);
@@ -56,6 +58,7 @@ export function useSettings() {
       tempLanguage.value = config.value.language || "auto";
       tempTheme.value = config.value.theme || "auto";
       tempSensitiveApps.value = [...(config.value.sensitive_apps || [])];
+      tempCompactMode.value = config.value.compact_mode || false;
 
       // Apply language
       if (config.value.language === "auto") {
@@ -79,6 +82,7 @@ export function useSettings() {
         language: tempLanguage.value,
         theme: tempTheme.value,
         sensitiveApps: tempSensitiveApps.value,
+        compactMode: tempCompactMode.value,
       });
       await loadConfig();
       showSettings.value = false;
@@ -96,6 +100,7 @@ export function useSettings() {
     tempLanguage.value = config.value.language || "auto";
     tempTheme.value = config.value.theme || "auto";
     tempSensitiveApps.value = [...(config.value.sensitive_apps || [])];
+    tempCompactMode.value = config.value.compact_mode || false;
     isEnabled().then((enabled) => {
       isAutoStart.value = enabled;
     });
@@ -188,6 +193,7 @@ export function useSettings() {
     tempLanguage,
     tempTheme,
     tempSensitiveApps,
+    tempCompactMode,
     isRecording,
     isPaused,
     isAutoStart,

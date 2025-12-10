@@ -22,7 +22,8 @@
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-store": "^2.4.1",
     "vue": "^3.5.13",
-    "vue-i18n": "9"
+    "vue-i18n": "9",
+    "vue-virtual-scroller": "2.0.0-beta.8"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

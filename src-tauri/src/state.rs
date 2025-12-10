@@ -1,5 +1,5 @@
 use crate::db::Database;
-use crate::models::AppConfig;
+use crate::models::{AppConfig, ClipboardItem};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -10,4 +10,5 @@ pub struct AppState {
     pub is_paused: Arc<Mutex<bool>>,
     pub last_app_change: Arc<Mutex<Option<String>>>,
     pub last_app_image_change: Arc<Mutex<Option<Vec<u8>>>>,
+    pub paste_stack: Arc<Mutex<Vec<ClipboardItem>>>,
 }

@@ -3,18 +3,24 @@ use std::fs;
 use tauri::Emitter;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
-use crate::models::{AppConfig, ClipboardItem};
+use crate::models::{AppConfig, ClipboardItem, Collection};
+use crate::ocr::recognize_text;
 use crate::state::AppState;
 use crate::tray::update_tray_menu;
-use crate::utils::write_to_clipboard;
+use crate::utils::{classify_content, write_to_clipboard};
 
 #[tauri::command]
 pub fn get_history(
     state: tauri::State<AppState>,
     page: usize,
     page_size: usize,
+    query: Option<String>,
+    collection_id: Option<i64>,
 ) -> Vec<ClipboardItem> {
-    state.db.get_history(page, page_size).unwrap_or_default()
+    state
+        .db
+        .get_history(page, page_size, query, collection_id)
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -31,6 +37,8 @@ pub fn set_clipboard_item(
         *last_change = Some(content.clone());
     }
 
+    let data_type = classify_content(&content);
+
     let item = ClipboardItem {
         id,
         content: content.clone(),
@@ -38,6 +46,9 @@ pub fn set_clipboard_item(
         timestamp: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         is_sensitive: false, // Manually added items are assumed not sensitive
         is_pinned: false,
+        source_app: None,
+        data_type,
+        collection_id: None,
     };
 
     // Write to clipboard
@@ -78,7 +89,7 @@ pub fn set_clipboard_item(
     }
 
     // Update Tray
-    let history = state.db.get_history(1, 20).unwrap_or_default();
+    let history = state.db.get_history(1, 20, None, None).unwrap_or_default();
     if let Err(e) = update_tray_menu(&app, &history) {
         log::error!("Failed to update tray menu: {}", e);
     }
@@ -116,7 +127,7 @@ pub fn delete_item(
     }
 
     // Update Tray
-    let history = state.db.get_history(1, 20).unwrap_or_default();
+    let history = state.db.get_history(1, 20, None, None).unwrap_or_default();
     if let Err(e) = update_tray_menu(&app, &history) {
         log::error!("Failed to update tray menu after delete: {}", e);
     }
@@ -196,6 +207,7 @@ pub fn save_config(
     language: String,
     theme: String,
     sensitive_apps: Vec<String>,
+    compact_mode: bool,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
     let old_shortcut = {
@@ -209,6 +221,7 @@ pub fn save_config(
         language: language.clone(),
         theme: theme.clone(),
         sensitive_apps,
+        compact_mode,
     };
 
     // Save to file
@@ -258,6 +271,51 @@ pub fn get_item_content(state: tauri::State<AppState>, id: i64) -> Result<String
 }
 
 #[tauri::command]
+pub fn create_collection(
+    state: tauri::State<AppState>,
+    name: String,
+) -> Result<Collection, String> {
+    state.db.create_collection(name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_collections(state: tauri::State<AppState>) -> Result<Vec<Collection>, String> {
+    state.db.get_collections().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_collection(state: tauri::State<AppState>, id: i64) -> Result<(), String> {
+    state.db.delete_collection(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_item_collection(
+    state: tauri::State<AppState>,
+    item_id: i64,
+    collection_id: Option<i64>,
+) -> Result<(), String> {
+    state
+        .db
+        .set_item_collection(item_id, collection_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_history_count(state: tauri::State<AppState>) -> usize {
     state.db.count_history().unwrap_or(0)
+}
+
+#[tauri::command]
+pub fn set_paste_stack(
+    state: tauri::State<AppState>,
+    items: Vec<ClipboardItem>,
+) -> Result<(), String> {
+    let mut stack = state.paste_stack.lock().map_err(|e| e.to_string())?;
+    *stack = items;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn ocr_image(image_path: String) -> Result<String, String> {
+    recognize_text(&image_path)
 }

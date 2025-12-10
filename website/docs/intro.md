@@ -40,6 +40,11 @@ We understand the sensitivity of clipboard data:
 - **Vim Style Navigation**: Supports `j` / `k` for moving up and down, `Ctrl+n` / `Ctrl+p` for quick selection.
 - **Global Shortcuts**: Summon the panel from any application with a simple shortcut (default `Cmd+Shift+V`).
 
+### 🚀 Advanced Productivity
+
+- **Paste Stack**: Copy multiple items and paste them sequentially in a specific order. Perfect for form filling.
+- **OCR (macOS)**: Extract text directly from images in your clipboard history.
+
 ## 🌍 Cross-Platform & Internationalization
 
 - Supports macOS, Windows, and Linux.

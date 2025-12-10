@@ -1,9 +1,52 @@
 use crate::models::ClipboardItem;
 use crate::state::AppState;
 use base64::{engine::general_purpose, Engine as _};
+use regex::Regex;
 use std::fs;
 use tauri::Manager;
 use tauri_plugin_clipboard_manager::ClipboardExt;
+
+pub fn classify_content(content: &str) -> String {
+    // URL
+    let url_regex = Regex::new(r"^(https?://|www\.)[^\s/$.?#].[^\s]*$").unwrap();
+    if url_regex.is_match(content) {
+        return "url".to_string();
+    }
+
+    // Email
+    let email_regex = Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap();
+    if email_regex.is_match(content) {
+        return "email".to_string();
+    }
+
+    // Phone (Simple)
+    let phone_regex = Regex::new(r"^(\+\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{4}$").unwrap();
+    if phone_regex.is_match(content) {
+        return "phone".to_string();
+    }
+
+    // Code (Heuristic)
+    let code_indicators = [
+        "function", "class", "def", "import", "const", "let", "var", "public", "private", "return",
+        "if (", "for (", "while (", "=>", "->", "::", "{", "}",
+    ];
+    let mut score = 0;
+    for indicator in code_indicators {
+        if content.contains(indicator) {
+            score += 1;
+        }
+    }
+    // Also check for indentation or typical code structure
+    if content.contains(";\n") || content.contains("{\n") || content.contains("}\n") {
+        score += 2;
+    }
+
+    if score >= 2 {
+        return "code".to_string();
+    }
+
+    "text".to_string()
+}
 
 pub fn write_to_clipboard(app: &tauri::AppHandle, item: &ClipboardItem) -> Result<(), String> {
     if item.kind == "text" {

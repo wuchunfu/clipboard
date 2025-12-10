@@ -10,6 +10,23 @@ pub struct ClipboardItem {
     pub is_sensitive: bool,
     #[serde(default)]
     pub is_pinned: bool,
+    #[serde(default)]
+    pub source_app: Option<String>,
+    #[serde(default = "default_data_type")]
+    pub data_type: String, // "text", "image", "url", "email", "code", "phone"
+    #[serde(default)]
+    pub collection_id: Option<i64>,
+}
+
+fn default_data_type() -> String {
+    "text".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Collection {
+    pub id: i64,
+    pub name: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +39,8 @@ pub struct AppConfig {
     pub theme: String,
     #[serde(default = "default_sensitive_apps")]
     pub sensitive_apps: Vec<String>,
+    #[serde(default)]
+    pub compact_mode: bool,
 }
 
 fn default_language() -> String {
@@ -52,6 +71,7 @@ impl Default for AppConfig {
             language: "auto".to_string(),
             theme: "auto".to_string(),
             sensitive_apps: default_sensitive_apps(),
+            compact_mode: false,
         }
     }
 }

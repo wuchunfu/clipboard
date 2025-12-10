@@ -15,6 +15,11 @@ import {
   CornerDownLeft,
   Pin,
   PinOff,
+  Globe,
+  Mail,
+  Phone,
+  Code,
+  ScanText,
 } from "lucide-vue-next";
 import Button from "@/components/ui/button/Button.vue";
 import Input from "@/components/ui/input/Input.vue";
@@ -41,13 +46,52 @@ const {
   togglePin,
   scrollToSelected,
   setupClipboardListeners,
+  selectedIds,
+  toggleSelection,
+  pasteStack,
+  ocrImage,
 } = useClipboard();
 
-const { loadConfig, setupConfigListeners } = useSettings();
+const { config, loadConfig, setupConfigListeners } = useSettings();
+
+function getItemIcon(item: any) {
+  if (item.kind === "image") return ImageIcon;
+
+  switch (item.data_type) {
+    case "url":
+      return Globe;
+    case "email":
+      return Mail;
+    case "code":
+      return Code;
+    case "phone":
+      return Phone;
+    default:
+      return FileText;
+  }
+}
+
+function handleItemClick(item: any, e: MouseEvent) {
+  if (e.metaKey || e.ctrlKey) {
+    toggleSelection(item);
+  } else {
+    pasteItem(item);
+  }
+}
 
 function handleKeydown(e: KeyboardEvent) {
   const len = filteredHistory.value.length;
   if (len === 0 && e.key !== "Escape") return;
+
+  // Number keys 1-9 for quick paste
+  if (e.key >= "1" && e.key <= "9") {
+    const index = parseInt(e.key) - 1;
+    if (index < len) {
+      e.preventDefault();
+      pasteItem(filteredHistory.value[index]);
+      return;
+    }
+  }
 
   // Vim navigation
   if (
@@ -68,8 +112,15 @@ function handleKeydown(e: KeyboardEvent) {
     scrollToSelected();
   } else if (e.key === "Enter") {
     e.preventDefault();
-    if (filteredHistory.value[selectedIndex.value]) {
+    if (selectedIds.value.length > 0) {
+      pasteStack();
+    } else if (filteredHistory.value[selectedIndex.value]) {
       pasteItem(filteredHistory.value[selectedIndex.value]);
+    }
+  } else if (e.key === "x") {
+    e.preventDefault();
+    if (filteredHistory.value[selectedIndex.value]) {
+      toggleSelection(filteredHistory.value[selectedIndex.value]);
     }
   } else if (e.key === " ") {
     e.preventDefault();
@@ -89,14 +140,14 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   await loadConfig();
-  await loadHistory();
+  await loadHistory(true);
   await setupClipboardListeners();
   await setupConfigListeners();
   window.addEventListener("keydown", handleKeydown);
 
   // Focus search on show
   await listen("tauri://focus", () => {
-    loadHistory();
+    loadHistory(true);
   });
 });
 
@@ -107,18 +158,18 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="h-screen w-screen bg-background text-foreground flex flex-col overflow-hidden select-none"
+    class="h-screen w-screen bg-background/60 text-foreground flex flex-col overflow-hidden select-none"
   >
     <!-- Header -->
-    <div class="border-b border-border bg-card/50 backdrop-blur-sm p-2">
+    <div class="border-b border-border bg-card/40 backdrop-blur-md p-2">
       <!-- Search Bar -->
       <div class="relative">
         <Search
-          class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground"
+          class="absolute left-2 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground"
         />
         <Input
           v-model="searchQuery"
-          class="w-full pl-9 h-8 text-xs"
+          class="w-full pl-8 h-7 text-xs"
           :placeholder="t('searchPlaceholder')"
         />
       </div>
@@ -126,40 +177,90 @@ onUnmounted(() => {
 
     <!-- List -->
     <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-      <TransitionGroup name="list">
+      <div
+        v-for="(item, index) in filteredHistory"
+        :key="item.timestamp"
+        class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer"
+        :class="[
+          index === selectedIndex
+            ? 'bg-accent border-primary/20 selected-item'
+            : '',
+          item.id && selectedIds.includes(item.id)
+            ? 'border-primary bg-accent/30'
+            : '',
+          config.compact_mode ? 'p-1.5' : 'p-2',
+        ]"
+        @click="handleItemClick(item, $event)"
+        @mouseenter="selectedIndex = index"
+      >
+        <!-- Selection Badge -->
         <div
-          v-for="(item, index) in filteredHistory"
-          :key="item.timestamp"
-          class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer p-2"
-          :class="[
-            index === selectedIndex
-              ? 'bg-accent border-primary/20 selected-item'
-              : '',
-          ]"
-          @click="pasteItem(item)"
-          @mouseenter="selectedIndex = index"
+          v-if="item.id && selectedIds.includes(item.id)"
+          class="absolute -top-1 -left-1 bg-primary text-primary-foreground text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center z-20 shadow-sm"
         >
-          <!-- Content -->
-          <div class="flex gap-3 items-start">
+          {{ selectedIds.indexOf(item.id) + 1 }}
+        </div>
+
+        <!-- Content -->
+        <div
+          class="flex gap-3"
+          :class="config.compact_mode ? 'items-center' : 'items-start'"
+        >
+          <div
+            class="rounded-md bg-muted text-muted-foreground shrink-0 relative flex items-center justify-center"
+            :class="
+              config.compact_mode ? 'w-6 h-6 p-1' : 'w-7 h-7 mt-0.5 p-1.5'
+            "
+          >
+            <component
+              :is="getItemIcon(item)"
+              :class="config.compact_mode ? 'w-3.5 h-3.5' : 'w-4 h-4'"
+            />
             <div
-              class="mt-0.5 p-1.5 rounded-md bg-muted text-muted-foreground shrink-0 relative"
+              v-if="item.is_pinned"
+              class="absolute -bottom-1 -right-1 bg-primary text-primary-foreground rounded-full p-0.5 shadow-sm"
             >
-              <FileText v-if="item.kind === 'text'" class="w-4 h-4" />
-              <ImageIcon v-else class="w-4 h-4" />
-              <div
-                v-if="item.is_pinned"
-                class="absolute -top-1 -right-1 bg-primary text-primary-foreground rounded-full p-0.5 shadow-sm"
-              >
-                <Pin class="w-2 h-2" />
-              </div>
+              <Pin class="w-2 h-2" />
             </div>
-            <div class="flex-1 min-w-0">
-              <div class="flex justify-between items-baseline mb-0.5">
-                <span
-                  class="text-[10px] font-mono text-muted-foreground opacity-70"
-                  >{{ formatTimeAgo(item.timestamp) }}</span
+          </div>
+          <div class="flex-1 min-w-0">
+            <div
+              v-if="!config.compact_mode"
+              class="flex justify-between items-baseline mb-0.5"
+            >
+              <span
+                class="text-[10px] font-mono text-muted-foreground opacity-70"
+                >{{ formatTimeAgo(item.timestamp) }}</span
+              >
+            </div>
+
+            <div
+              v-if="config.compact_mode"
+              class="flex items-center justify-between gap-2"
+              :class="{ 'pr-6': index < 9 }"
+            >
+              <p
+                v-if="item.kind === 'text'"
+                class="text-xs text-foreground line-clamp-1 break-all font-medium flex-1"
+                :class="{
+                  'blur-sm group-hover:blur-none transition-all':
+                    item.is_sensitive,
+                }"
+              >
+                {{ item.content }}
+              </p>
+              <div v-else class="flex items-center gap-2 flex-1">
+                <span class="text-xs text-muted-foreground italic"
+                  >[Image]</span
                 >
               </div>
+              <span
+                class="text-[9px] font-mono text-muted-foreground opacity-50 shrink-0"
+                >{{ formatTimeAgo(item.timestamp) }}</span
+              >
+            </div>
+
+            <template v-else>
               <p
                 v-if="item.kind === 'text'"
                 class="text-sm text-foreground line-clamp-2 break-all font-medium"
@@ -179,75 +280,83 @@ onUnmounted(() => {
                   class="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
                 />
               </div>
-            </div>
-          </div>
-
-          <!-- Hover Actions -->
-          <div
-            class="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border"
-            @click.stop
-          >
-            <Button
-              @click.stop="togglePin(index)"
-              size="icon"
-              variant="ghost"
-              class="h-6 w-6"
-              :class="item.is_pinned ? 'text-primary' : 'text-muted-foreground'"
-              :title="item.is_pinned ? t('actions.unpin') : t('actions.pin')"
-            >
-              <component
-                :is="item.is_pinned ? PinOff : Pin"
-                class="w-3.5 h-3.5"
-              />
-            </Button>
-            <Button
-              @click.stop="toggleSensitive(index)"
-              size="icon"
-              variant="ghost"
-              class="h-6 w-6"
-              :class="
-                item.is_sensitive ? 'text-yellow-500' : 'text-muted-foreground'
-              "
-              :title="
-                item.is_sensitive
-                  ? t('actions.sensitiveTooltip')
-                  : t('actions.markSensitive')
-              "
-            >
-              <component
-                :is="item.is_sensitive ? Lock : Unlock"
-                class="w-3.5 h-3.5"
-              />
-            </Button>
-            <Button
-              @click.stop="previewItem = item"
-              size="icon"
-              variant="ghost"
-              class="h-6 w-6 text-muted-foreground hover:text-primary"
-              :title="t('actions.preview')"
-            >
-              <Eye class="w-3.5 h-3.5" />
-            </Button>
-            <Button
-              @click.stop="deleteItem(index)"
-              size="icon"
-              variant="ghost"
-              class="h-6 w-6 text-muted-foreground hover:text-destructive"
-              :title="t('actions.delete')"
-            >
-              <X class="w-3.5 h-3.5" />
-            </Button>
-          </div>
-
-          <!-- Always visible lock if sensitive -->
-          <div
-            v-if="item.is_sensitive"
-            class="absolute top-2 right-2 opacity-100 group-hover:opacity-0 transition-opacity pointer-events-none"
-          >
-            <Lock class="w-3 h-3 text-yellow-600/50" />
+            </template>
           </div>
         </div>
-      </TransitionGroup>
+
+        <!-- Hover Actions -->
+        <div
+          class="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border z-20"
+          @click.stop
+        >
+          <Button
+            @click.stop="togglePin(index)"
+            size="icon"
+            variant="ghost"
+            class="h-6 w-6"
+            :class="item.is_pinned ? 'text-primary' : 'text-muted-foreground'"
+            :title="item.is_pinned ? t('actions.unpin') : t('actions.pin')"
+          >
+            <component
+              :is="item.is_pinned ? PinOff : Pin"
+              class="w-3.5 h-3.5"
+            />
+          </Button>
+          <Button
+            @click.stop="toggleSensitive(index)"
+            size="icon"
+            variant="ghost"
+            class="h-6 w-6"
+            :class="
+              item.is_sensitive ? 'text-yellow-500' : 'text-muted-foreground'
+            "
+            :title="
+              item.is_sensitive
+                ? t('actions.sensitiveTooltip')
+                : t('actions.markSensitive')
+            "
+          >
+            <component
+              :is="item.is_sensitive ? Lock : Unlock"
+              class="w-3.5 h-3.5"
+            />
+          </Button>
+          <Button
+            @click.stop="previewItem = item"
+            size="icon"
+            variant="ghost"
+            class="h-6 w-6 text-muted-foreground hover:text-primary"
+            :title="t('actions.preview')"
+          >
+            <Eye class="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            @click.stop="deleteItem(index)"
+            size="icon"
+            variant="ghost"
+            class="h-6 w-6 text-muted-foreground hover:text-destructive"
+            :title="t('actions.delete')"
+          >
+            <X class="w-3.5 h-3.5" />
+          </Button>
+        </div>
+
+        <!-- Status / Shortcuts (Visible when NOT hovering) -->
+        <div
+          class="absolute top-2 right-2 flex gap-2 items-center opacity-100 group-hover:opacity-0 transition-opacity pointer-events-none"
+        >
+          <!-- Number Shortcut -->
+          <span
+            v-if="index < 9"
+            class="flex items-center justify-center w-4 h-4 bg-muted/50 text-muted-foreground rounded border border-border/50 text-[9px] font-mono shadow-sm"
+          >
+            {{ index + 1 }}
+          </span>
+
+          <!-- Sensitive Lock -->
+          <Lock v-if="item.is_sensitive" class="w-3 h-3 text-yellow-600/50" />
+        </div>
+      </div>
 
       <div
         v-if="filteredHistory.length === 0"
@@ -256,6 +365,35 @@ onUnmounted(() => {
         <Command class="w-8 h-8 mb-2 opacity-20" />
         <p class="text-sm">{{ t("emptyState.title") }}</p>
         <p class="text-xs opacity-50 mt-1">{{ t("emptyState.subtitle") }}</p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div
+      class="border-t border-border bg-card/40 backdrop-blur-md p-1.5 flex justify-end px-3"
+    >
+      <div class="flex items-center gap-3 text-[10px] text-muted-foreground">
+        <div class="flex items-center gap-1">
+          <span
+            class="bg-muted px-1.5 py-0.5 rounded border border-border font-mono text-[9px]"
+            >1-9</span
+          >
+          <span>{{ t("shortcuts.paste") }}</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <span
+            class="bg-muted px-1.5 py-0.5 rounded border border-border font-mono text-[9px]"
+            >Space</span
+          >
+          <span>{{ t("shortcuts.preview") }}</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <span
+            class="bg-muted px-1.5 py-0.5 rounded border border-border font-mono text-[9px]"
+            >x</span
+          >
+          <span>{{ t("shortcuts.select") }}</span>
+        </div>
       </div>
     </div>
 
@@ -314,6 +452,14 @@ onUnmounted(() => {
           class="p-3 border-t border-border bg-muted/30 flex justify-end gap-2"
         >
           <Button
+            v-if="previewItem.kind === 'image'"
+            @click="ocrImage(previewItem!)"
+            variant="secondary"
+            class="gap-2"
+          >
+            <ScanText class="w-4 h-4" /> {{ t("actions.ocr") }}
+          </Button>
+          <Button
             @click="
               pasteItem(previewItem!);
               previewItem = null;
@@ -341,16 +487,6 @@ onUnmounted(() => {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground));
-}
-
-.list-enter-active,
-.list-leave-active {
-  transition: all 0.3s ease;
-}
-.list-enter-from,
-.list-leave-to {
-  opacity: 0;
-  transform: translateX(-20px);
 }
 
 .fade-enter-active,

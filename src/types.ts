@@ -5,6 +5,15 @@ export interface ClipboardItem {
   timestamp: string;
   is_sensitive?: boolean;
   is_pinned?: boolean;
+  source_app?: string;
+  data_type?: string;
+  collection_id?: number;
+}
+
+export interface Collection {
+  id: number;
+  name: string;
+  created_at: string;
 }
 
 export interface AppConfig {
@@ -13,4 +22,5 @@ export interface AppConfig {
   language: string;
   theme: string;
   sensitive_apps: string[];
+  compact_mode?: boolean;
 }

@@ -1,5 +1,5 @@
 use crate::crypto::Crypto;
-use crate::models::ClipboardItem;
+use crate::models::{ClipboardItem, Collection};
 use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -51,6 +51,28 @@ impl Database {
             tx.execute("PRAGMA user_version = 2", [])?;
         }
 
+        if version < 3 {
+            let _ = tx.execute("ALTER TABLE history ADD COLUMN source_app TEXT", []);
+            tx.execute("PRAGMA user_version = 3", [])?;
+        }
+
+        if version < 4 {
+            let _ = tx.execute(
+                "ALTER TABLE history ADD COLUMN data_type TEXT NOT NULL DEFAULT 'text'",
+                [],
+            );
+            let _ = tx.execute("ALTER TABLE history ADD COLUMN collection_id INTEGER", []);
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS collections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )",
+                [],
+            )?;
+            tx.execute("PRAGMA user_version = 4", [])?;
+        }
+
         tx.commit()?;
 
         Ok(Self {
@@ -59,31 +81,56 @@ impl Database {
         })
     }
 
-    pub fn get_history(&self, page: usize, page_size: usize) -> Result<Vec<ClipboardItem>> {
+    pub fn get_history(
+        &self,
+        page: usize,
+        page_size: usize,
+        query: Option<String>,
+        collection_id: Option<i64>,
+    ) -> Result<Vec<ClipboardItem>> {
         let conn = self.conn.lock().unwrap();
         let offset = (page - 1) * page_size;
-        let mut stmt = conn.prepare(
-            "SELECT id, content, kind, timestamp, is_sensitive, is_pinned FROM history ORDER BY is_pinned DESC, timestamp DESC LIMIT ?1 OFFSET ?2",
-        )?;
 
-        let rows = stmt.query_map(params![page_size, offset], |row| {
+        let mut sql = String::from("SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id FROM history WHERE 1=1");
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(q) = &query {
+            if !q.is_empty() {
+                sql.push_str(" AND content LIKE ?");
+                params.push(Box::new(format!("%{}%", q)));
+            }
+        }
+
+        if let Some(cid) = collection_id {
+            sql.push_str(" AND collection_id = ?");
+            params.push(Box::new(cid));
+        }
+
+        sql.push_str(" ORDER BY is_pinned DESC, timestamp DESC LIMIT ? OFFSET ?");
+        params.push(Box::new(page_size));
+        params.push(Box::new(offset));
+
+        let mut stmt = conn.prepare(&sql)?;
+
+        // Convert params to references for query_map
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+        let rows = stmt.query_map(params_refs.as_slice(), |row| {
             let id: i64 = row.get(0)?;
             let content: String = row.get(1)?;
             let kind: String = row.get(2)?;
             let timestamp: String = row.get(3)?;
             let is_sensitive: bool = row.get(4)?;
             let is_pinned: bool = row.get(5)?;
+            let source_app: Option<String> = row.get(6)?;
+            let data_type: String = row.get(7)?;
+            let collection_id: Option<i64> = row.get(8)?;
 
-            let mut final_content = if is_sensitive && kind == "text" {
-                self.crypto.decrypt(&content).unwrap_or_else(|_| content)
+            let final_content = if is_sensitive && kind == "text" {
+                self.crypto.decrypt(&content).unwrap_or(content)
             } else {
                 content
             };
-
-            // Truncate content for list view (performance optimization)
-            if kind == "text" && final_content.chars().count() > 200 {
-                final_content = final_content.chars().take(200).collect();
-            }
 
             Ok(ClipboardItem {
                 id: Some(id),
@@ -92,6 +139,9 @@ impl Database {
                 timestamp,
                 is_sensitive,
                 is_pinned,
+                source_app,
+                data_type,
+                collection_id,
             })
         })?;
 
@@ -114,22 +164,25 @@ impl Database {
             item.content.clone()
         };
 
-        // Deduplicate: Update timestamp if exists (for non-sensitive items mostly)
+        // Deduplicate: Update timestamp and source_app if exists
         let updated_count = conn.execute(
-            "UPDATE history SET timestamp = ?1 WHERE content = ?2 AND kind = ?3",
-            params![item.timestamp, content_to_store, item.kind],
+            "UPDATE history SET timestamp = ?1, source_app = ?2 WHERE content = ?3 AND kind = ?4",
+            params![item.timestamp, item.source_app, content_to_store, item.kind],
         )?;
 
         if updated_count == 0 {
             // Insert new item
             conn.execute(
-                "INSERT INTO history (content, kind, timestamp, is_sensitive, is_pinned) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO history (content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     content_to_store,
                     item.kind,
                     item.timestamp,
                     item.is_sensitive,
-                    item.is_pinned
+                    item.is_pinned,
+                    item.source_app,
+                    item.data_type,
+                    item.collection_id
                 ],
             )?;
         }
@@ -141,7 +194,7 @@ impl Database {
 
             // Fetch items to be deleted first (oldest timestamp, NOT pinned)
             let mut stmt = conn.prepare(&format!(
-                "SELECT content, kind, timestamp, is_sensitive, is_pinned FROM history WHERE is_pinned = 0 ORDER BY timestamp ASC LIMIT {}",
+                "SELECT content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id FROM history WHERE is_pinned = 0 ORDER BY timestamp ASC LIMIT {}",
                 delete_count
             ))?;
 
@@ -151,6 +204,9 @@ impl Database {
                 let timestamp: String = row.get(2)?;
                 let is_sensitive: bool = row.get(3)?;
                 let is_pinned: bool = row.get(4)?;
+                let source_app: Option<String> = row.get(5)?;
+                let data_type: String = row.get(6)?;
+                let collection_id: Option<i64> = row.get(7)?;
 
                 let final_content = if is_sensitive && kind == "text" {
                     self.crypto.decrypt(&content).unwrap_or(content)
@@ -165,6 +221,9 @@ impl Database {
                     timestamp,
                     is_sensitive,
                     is_pinned,
+                    source_app,
+                    data_type,
+                    collection_id,
                 })
             })?;
 
@@ -196,7 +255,7 @@ impl Database {
         // Get the ID and details of the item at the specified offset
         let item: Option<(i64, ClipboardItem)> = conn
             .query_row(
-                "SELECT id, content, kind, timestamp, is_sensitive, is_pinned FROM history ORDER BY is_pinned DESC, timestamp DESC LIMIT 1 OFFSET ?1",
+                "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id FROM history ORDER BY is_pinned DESC, timestamp DESC LIMIT 1 OFFSET ?1",
                 params![index],
                 |row| {
                     let id: i64 = row.get(0)?;
@@ -205,6 +264,9 @@ impl Database {
                     let timestamp: String = row.get(3)?;
                     let is_sensitive: bool = row.get(4)?;
                     let is_pinned: bool = row.get(5)?;
+                    let source_app: Option<String> = row.get(6)?;
+                    let data_type: String = row.get(7)?;
+                    let collection_id: Option<i64> = row.get(8)?;
 
                     let final_content = if is_sensitive && kind == "text" {
                         self.crypto.decrypt(&content).unwrap_or(content)
@@ -221,6 +283,9 @@ impl Database {
                             timestamp,
                             is_sensitive,
                             is_pinned,
+                            source_app,
+                            data_type,
+                            collection_id,
                         },
                     ))
                 },
@@ -306,8 +371,9 @@ impl Database {
         let conn = self.conn.lock().unwrap();
 
         // Get all items
-        let mut stmt = conn
-            .prepare("SELECT id, content, kind, timestamp, is_sensitive, is_pinned FROM history")?;
+        let mut stmt = conn.prepare(
+            "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id FROM history",
+        )?;
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
             let content: String = row.get(1)?;
@@ -315,6 +381,9 @@ impl Database {
             let timestamp: String = row.get(3)?;
             let is_sensitive: bool = row.get(4)?;
             let is_pinned: bool = row.get(5)?;
+            let source_app: Option<String> = row.get(6)?;
+            let data_type: String = row.get(7)?;
+            let collection_id: Option<i64> = row.get(8)?;
 
             let final_content = if is_sensitive && kind == "text" {
                 self.crypto.decrypt(&content).unwrap_or(content)
@@ -329,6 +398,9 @@ impl Database {
                 timestamp,
                 is_sensitive,
                 is_pinned,
+                source_app,
+                data_type,
+                collection_id,
             })
         })?;
 
@@ -368,6 +440,61 @@ impl Database {
         conn.execute(
             "UPDATE history SET timestamp = ?1 WHERE id = ?2",
             params![timestamp, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn create_collection(&self, name: String) -> Result<Collection> {
+        let conn = self.conn.lock().unwrap();
+        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO collections (name, created_at) VALUES (?1, ?2)",
+            params![name, timestamp],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(Collection {
+            id,
+            name,
+            created_at: timestamp,
+        })
+    }
+
+    pub fn get_collections(&self) -> Result<Vec<Collection>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt =
+            conn.prepare("SELECT id, name, created_at FROM collections ORDER BY created_at DESC")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Collection {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                created_at: row.get(2)?,
+            })
+        })?;
+
+        let mut collections = Vec::new();
+        for row in rows {
+            collections.push(row?);
+        }
+        Ok(collections)
+    }
+
+    pub fn delete_collection(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        // First, remove items from this collection (set collection_id to NULL)
+        conn.execute(
+            "UPDATE history SET collection_id = NULL WHERE collection_id = ?1",
+            params![id],
+        )?;
+        // Then delete the collection
+        conn.execute("DELETE FROM collections WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn set_item_collection(&self, item_id: i64, collection_id: Option<i64>) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE history SET collection_id = ?1 WHERE id = ?2",
+            params![collection_id, item_id],
         )?;
         Ok(())
     }

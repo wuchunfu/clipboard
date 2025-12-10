@@ -4,19 +4,62 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n } from "vue-i18n";
 import { useToast } from "./useToast";
-import type { ClipboardItem } from "../types";
+import type { ClipboardItem, Collection } from "../types";
 
 export function useClipboard() {
   const { t } = useI18n();
   const { showToast } = useToast();
 
   const history = ref<ClipboardItem[]>([]);
+  const collections = ref<Collection[]>([]);
   const totalCount = ref(0);
   const searchQuery = ref("");
   const selectedIndex = ref(0);
-  const activeFilter = ref<"all" | "text" | "image" | "sensitive">("all");
+  const activeFilter = ref<
+    "all" | "text" | "image" | "sensitive" | "url" | "email" | "code" | "phone"
+  >("all");
+  const activeCollectionId = ref<number | null>(null);
   const previewItem = ref<ClipboardItem | null>(null);
   const previewContent = ref("");
+  const selectedIds = ref<number[]>([]);
+
+  function toggleSelection(item: ClipboardItem) {
+    if (!item.id) return;
+    const index = selectedIds.value.indexOf(item.id);
+    if (index !== -1) {
+      selectedIds.value.splice(index, 1);
+    } else {
+      selectedIds.value.push(item.id);
+    }
+  }
+
+  function clearSelection() {
+    selectedIds.value = [];
+  }
+
+  async function pasteStack() {
+    if (selectedIds.value.length === 0) return;
+
+    const itemsToPaste = selectedIds.value
+      .map((id) => history.value.find((i) => i.id === id))
+      .filter((i): i is ClipboardItem => !!i);
+
+    if (itemsToPaste.length === 0) return;
+
+    const first = itemsToPaste[0];
+    const rest = itemsToPaste.slice(1);
+
+    try {
+      await invoke("set_paste_stack", { items: rest });
+      await pasteItem(first);
+      clearSelection();
+      if (rest.length > 0) {
+        showToast(t("toast.pasteStackStarted", { count: rest.length }));
+      }
+    } catch (e) {
+      console.error("Failed to start paste stack:", e);
+    }
+  }
 
   watch(previewItem, async (newItem) => {
     if (!newItem) {
@@ -44,44 +87,85 @@ export function useClipboard() {
     }
   });
 
+  const currentPage = ref(1);
+  const hasMore = ref(true);
+  const isLoading = ref(false);
+  const PAGE_SIZE = 50;
+
+  // Watchers for filters to reload history
+  watch([searchQuery, activeCollectionId, activeFilter], () => {
+    currentPage.value = 1;
+    loadHistory(true);
+  });
+
   const filteredHistory = computed(() => {
+    // Client-side filtering is now minimal or removed in favor of server-side
+    // But we keep type filtering client-side for now if backend doesn't support it fully yet
+    // Actually, let's rely on the backend results mostly.
+    // However, for "Type" filtering (Text/Image/Sensitive/etc), we didn't implement backend support yet.
+    // So we will keep client-side filtering for Type, but Search and Collection are now server-side.
+
     let items = history.value;
 
-    // Filter by Type
+    // Filter by Type (Client-side for now)
     if (activeFilter.value === "text") {
       items = items.filter((i) => i.kind === "text");
     } else if (activeFilter.value === "image") {
       items = items.filter((i) => i.kind === "image");
     } else if (activeFilter.value === "sensitive") {
       items = items.filter((i) => i.is_sensitive);
+    } else if (["url", "email", "code", "phone"].includes(activeFilter.value)) {
+      items = items.filter((i) => i.data_type === activeFilter.value);
     }
 
-    // Filter by Search
-    if (searchQuery.value) {
-      const query = searchQuery.value.toLowerCase();
-      items = items.filter((item) => {
-        if (item.kind === "text") {
-          return item.content.toLowerCase().includes(query);
-        }
-        return false;
-      });
-    }
     return items;
   });
 
-  async function loadHistory() {
+  async function loadHistory(reset = false) {
+    if (isLoading.value) return;
+    isLoading.value = true;
+
     try {
-      history.value = await invoke<ClipboardItem[]>("get_history", {
-        page: 1,
-        pageSize: 1000,
+      if (reset) {
+        currentPage.value = 1;
+        history.value = [];
+        hasMore.value = true;
+      }
+
+      const newItems = await invoke<ClipboardItem[]>("get_history", {
+        page: currentPage.value,
+        pageSize: PAGE_SIZE,
+        query: searchQuery.value || null,
+        collectionId: activeCollectionId.value,
       });
+
+      if (newItems.length < PAGE_SIZE) {
+        hasMore.value = false;
+      }
+
+      if (reset) {
+        history.value = newItems;
+      } else {
+        history.value = [...history.value, ...newItems];
+      }
+
       totalCount.value = await invoke<number>("get_history_count");
+
       // Ensure selection is valid
       if (selectedIndex.value >= filteredHistory.value.length) {
         selectedIndex.value = 0;
       }
     } catch (e) {
       console.error("Failed to load history:", e);
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function loadMore() {
+    if (hasMore.value && !isLoading.value) {
+      currentPage.value++;
+      await loadHistory(false);
     }
   }
 
@@ -109,7 +193,7 @@ export function useClipboard() {
         kind: item.kind,
         id: item.id,
       });
-      await loadHistory();
+      await loadHistory(true);
       searchQuery.value = "";
       showToast(t("toast.copied"));
     } catch (e) {
@@ -124,7 +208,7 @@ export function useClipboard() {
     if (realIndex !== -1) {
       try {
         await invoke("delete_item", { index: realIndex });
-        await loadHistory();
+        await loadHistory(true);
         showToast(t("toast.deleted"));
       } catch (e) {
         console.error("Failed to delete item:", e);
@@ -162,7 +246,7 @@ export function useClipboard() {
         });
         history.value[realIndex].is_pinned = newState as boolean;
         // Reload history to reflect sorting changes
-        await loadHistory();
+        await loadHistory(true);
         showToast(newState ? t("toast.pinned") : t("toast.unpinned"));
       } catch (e) {
         console.error("Failed to toggle pin:", e);
@@ -173,7 +257,7 @@ export function useClipboard() {
   async function clearHistory() {
     try {
       await invoke("clear_history");
-      await loadHistory();
+      await loadHistory(true);
       showToast(t("toast.historyCleared"));
     } catch (e) {
       console.error("Failed to clear history:", e);
@@ -199,20 +283,109 @@ export function useClipboard() {
   // Setup listeners
   async function setupClipboardListeners() {
     await listen("clipboard-update", () => {
-      loadHistory();
+      loadHistory(true);
     });
+  }
+
+  async function loadCollections() {
+    try {
+      collections.value = await invoke<Collection[]>("get_collections");
+    } catch (e) {
+      console.error("Failed to load collections:", e);
+    }
+  }
+
+  async function createCollection(name: string) {
+    try {
+      await invoke("create_collection", { name });
+      await loadCollections();
+      showToast(t("collections.created"));
+    } catch (e) {
+      console.error("Failed to create collection:", e);
+      showToast(t("collections.createFailed"));
+    }
+  }
+
+  async function deleteCollection(id: number) {
+    try {
+      await invoke("delete_collection", { id });
+      if (activeCollectionId.value === id) {
+        activeCollectionId.value = null;
+      }
+      await loadCollections();
+      await loadHistory(true); // Refresh items as their collection_id is now null
+      showToast(t("collections.deleted"));
+    } catch (e) {
+      console.error("Failed to delete collection:", e);
+      showToast(t("collections.deleteFailed"));
+    }
+  }
+
+  async function setItemCollection(
+    itemId: number,
+    collectionId: number | null
+  ) {
+    try {
+      await invoke("set_item_collection", { itemId, collectionId });
+      await loadHistory(true);
+      showToast(t("collections.itemUpdated"));
+    } catch (e) {
+      console.error("Failed to set item collection:", e);
+      showToast(`${t("collections.updateFailed")}: ${e}`);
+    }
+  }
+
+  async function ocrImage(item: ClipboardItem) {
+    if (item.kind !== "image") return;
+    try {
+      const text = await invoke<string>("ocr_image", {
+        imagePath: item.content,
+      });
+      debugger;
+      if (text) {
+        // Create a new text item from OCR result
+        await invoke("set_clipboard_item", {
+          content: text,
+          kind: "text",
+          id: null,
+        });
+
+        await loadHistory(true);
+        showToast(t("toast.ocrSuccess"));
+
+        // Show result in preview
+        previewItem.value = {
+          content: text,
+          kind: "text",
+          timestamp: new Date().toISOString(),
+          is_sensitive: item.is_sensitive,
+          data_type: "text",
+        };
+      } else {
+        showToast(t("toast.ocrEmpty"));
+      }
+    } catch (e) {
+      console.error("OCR failed:", e);
+      showToast(t("toast.ocrFailed"));
+    }
   }
 
   return {
     history,
+    collections,
     totalCount,
     searchQuery,
     selectedIndex,
     activeFilter,
+    activeCollectionId,
     previewItem,
     previewContent,
     filteredHistory,
     loadHistory,
+    loadCollections,
+    createCollection,
+    deleteCollection,
+    setItemCollection,
     pasteItem,
     deleteItem,
     toggleSensitive,
@@ -221,5 +394,13 @@ export function useClipboard() {
     getImageSrc,
     scrollToSelected,
     setupClipboardListeners,
+    loadMore,
+    isLoading,
+    hasMore,
+    selectedIds,
+    toggleSelection,
+    clearSelection,
+    pasteStack,
+    ocrImage,
   };
 }

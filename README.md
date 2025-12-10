@@ -19,6 +19,9 @@ A lightweight, secure, and modern clipboard manager built with **Rust (Tauri v2)
   - **Memory Only**: Sensitive items can be marked to not persist to disk.
 - **📌 Pinning**: Pin important items to the top of the list to prevent them from being auto-deleted.
 - **⚡ Performance**: Optimized for large text content with lazy loading.
+- **📚 Paste Stack**: Copy multiple items in sequence and paste them in order (FIFO/LIFO).
+- **📝 OCR (macOS)**: Extract text from images directly within the app.
+- **📏 Compact Mode**: A dense view for power users to see more items at once.
 - **⌨️ Keyboard Driven**: Vim-like navigation (`j`/`k`) and global shortcuts.
 - **🌍 Internationalization**: Support for English and Chinese (简体中文).
 - **🚀 Auto-start**: Option to launch automatically at system login.
@@ -33,7 +36,9 @@ A lightweight, secure, and modern clipboard manager built with **Rust (Tauri v2)
 
 - **Select Item**: `↑` / `↓` or `Ctrl+n` / `Ctrl+p` or `Ctrl+j` / `Ctrl+k` (Vim style)
 - **Paste Item**: `Enter`
+- **Multi-Select (Paste Stack)**: `x` or `Cmd+Click` to select items. Press `Enter` to start the stack, then use the Global Shortcut to paste items sequentially.
 - **Preview Item**: `Space` (Press again to close)
+- **OCR (Image Preview)**: In preview mode, click the "Extract Text" button to copy text from image.
 - **Close / Back**: `Esc`
 
 ### Data Storage

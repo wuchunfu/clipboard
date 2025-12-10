@@ -20,6 +20,15 @@ import {
   Plus,
   Pin,
   PinOff,
+  Ban,
+  Folder,
+  FolderPlus,
+  Hash,
+  Globe,
+  Mail,
+  Phone,
+  Code,
+  ScanText,
 } from "lucide-vue-next";
 import Button from "@/components/ui/button/Button.vue";
 import Input from "@/components/ui/input/Input.vue";
@@ -27,6 +36,7 @@ import { useClipboard } from "@/composables/useClipboard";
 import { useSettings } from "@/composables/useSettings";
 import { useToast } from "@/composables/useToast";
 import { useTimeAgo } from "@/composables/useTimeAgo";
+import type { ClipboardItem } from "@/types";
 
 import LocalImage from "@/components/LocalImage.vue";
 
@@ -35,14 +45,20 @@ const { toastMessage } = useToast();
 const { formatTimeAgo } = useTimeAgo();
 
 const {
+  collections,
   totalCount,
   searchQuery,
   selectedIndex,
   activeFilter,
+  activeCollectionId,
   previewItem,
   previewContent,
   filteredHistory,
   loadHistory,
+  loadCollections,
+  createCollection,
+  deleteCollection,
+  setItemCollection,
   pasteItem,
   deleteItem,
   toggleSensitive,
@@ -50,7 +66,22 @@ const {
   clearHistory,
   scrollToSelected,
   setupClipboardListeners,
+  loadMore,
+  isLoading,
+  hasMore,
+  ocrImage,
 } = useClipboard();
+
+function handleScroll(e: Event) {
+  const target = e.target as HTMLElement;
+  if (
+    target.scrollHeight - target.scrollTop - target.clientHeight < 100 &&
+    !isLoading.value &&
+    hasMore.value
+  ) {
+    loadMore();
+  }
+}
 
 const {
   config,
@@ -60,6 +91,7 @@ const {
   tempLanguage,
   tempTheme,
   tempSensitiveApps,
+  tempCompactMode,
   isRecording,
   isPaused,
   isAutoStart,
@@ -75,13 +107,92 @@ const {
 
 const newAppInput = ref("");
 const showClearConfirm = ref(false);
+const showCollections = ref(false);
+const newCollectionName = ref("");
+const itemToAddToCollection = ref<ClipboardItem | null>(null);
 
-function addSensitiveApp() {
-  if (newAppInput.value.trim()) {
-    if (!tempSensitiveApps.value.includes(newAppInput.value.trim())) {
-      tempSensitiveApps.value.push(newAppInput.value.trim());
+async function handleCreateCollection() {
+  if (newCollectionName.value.trim()) {
+    await createCollection(newCollectionName.value.trim());
+    newCollectionName.value = "";
+  }
+}
+
+async function handleAddToCollection(collectionId: number | null) {
+  if (itemToAddToCollection.value && itemToAddToCollection.value.id) {
+    await setItemCollection(itemToAddToCollection.value.id, collectionId);
+    itemToAddToCollection.value = null;
+  }
+}
+
+function addSensitiveApp(appName?: string) {
+  const app = appName || newAppInput.value.trim();
+  if (app) {
+    if (!tempSensitiveApps.value.includes(app)) {
+      tempSensitiveApps.value.push(app);
+      if (appName) {
+        // If added via button, save immediately
+        config.value.sensitive_apps = [...tempSensitiveApps.value];
+        saveConfig();
+        toastMessage.value = t("settings.appBlocked", { app });
+      }
     }
-    newAppInput.value = "";
+    if (!appName) newAppInput.value = "";
+  }
+}
+
+function handleDragStart(e: DragEvent, item: ClipboardItem) {
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = "copy";
+
+    // Set text/plain for all items as fallback
+    e.dataTransfer.setData("text/plain", item.content);
+
+    if (item.kind === "image") {
+      // For images, we try to set file URL if it's a local path
+      if (item.content.startsWith("/") || item.content.match(/^[a-zA-Z]:\//)) {
+        const fileUrl = `file://${item.content}`;
+        e.dataTransfer.setData("text/uri-list", fileUrl);
+      }
+    }
+  }
+}
+
+function getItemIcon(item: ClipboardItem) {
+  if (item.kind === "image") return ImageIcon;
+
+  switch (item.data_type) {
+    case "url":
+      return Globe;
+    case "email":
+      return Mail;
+    case "code":
+      return Code;
+    case "phone":
+      return Phone;
+    default:
+      return FileText;
+  }
+}
+
+function getFilterIcon(filter: string) {
+  switch (filter) {
+    case "text":
+      return FileText;
+    case "image":
+      return ImageIcon;
+    case "sensitive":
+      return Lock;
+    case "url":
+      return Globe;
+    case "email":
+      return Mail;
+    case "code":
+      return Code;
+    case "phone":
+      return Phone;
+    default:
+      return null;
   }
 }
 
@@ -135,14 +246,15 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   await loadConfig();
-  await loadHistory();
+  await loadHistory(true);
+  await loadCollections();
   await setupClipboardListeners();
   await setupConfigListeners();
   window.addEventListener("keydown", handleKeydown);
 
   // Focus search on show
   await listen("tauri://focus", () => {
-    loadHistory();
+    loadHistory(true);
   });
 });
 
@@ -153,43 +265,69 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="h-screen w-screen bg-background text-foreground flex flex-col overflow-hidden select-none"
+    class="h-screen w-screen bg-background/60 text-foreground flex flex-col overflow-hidden"
   >
     <!-- Header -->
     <div
-      class="border-b border-border bg-card/50 backdrop-blur-sm p-3 space-y-3"
+      class="border-b border-border bg-card/40 backdrop-blur-md p-3 space-y-3"
     >
       <!-- Search Bar -->
       <div class="relative">
         <Search
-          class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground"
+          class="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground"
         />
         <Input
           v-model="searchQuery"
-          class="w-full pl-9"
+          class="w-full pl-9 pr-20 h-8 text-xs"
           :placeholder="t('searchPlaceholder')"
         />
+        <div
+          class="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-muted-foreground"
+        >
+          {{ totalCount }} {{ t("stats.items") }}
+        </div>
       </div>
 
       <!-- Filters & Actions -->
-      <div class="flex items-center justify-between">
-        <div class="flex gap-1">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex gap-1 overflow-x-auto no-scrollbar flex-1">
           <Button
-            v-for="filter in ['all', 'text', 'image', 'sensitive']"
+            v-for="filter in [
+              'all',
+              'text',
+              'image',
+              'sensitive',
+              'url',
+              'email',
+              'code',
+              'phone',
+            ]"
             :key="filter"
             @click="activeFilter = filter as any"
             size="sm"
             :variant="activeFilter === filter ? 'default' : 'ghost'"
-            class="h-6 text-[10px] uppercase font-bold tracking-wider rounded-full px-2.5"
+            class="h-6 text-[10px] uppercase font-bold tracking-wider rounded-full px-2.5 shrink-0"
           >
+            <component
+              :is="getFilterIcon(filter)"
+              class="w-3 h-3 mr-1"
+              v-if="filter !== 'all'"
+            />
             {{ t(`filters.${filter}`) }}
           </Button>
-          <span class="text-xs text-muted-foreground ml-2 self-center">
-            {{ totalCount }} {{ t("stats.items") }}
-          </span>
         </div>
 
-        <div class="flex gap-1">
+        <div class="flex gap-1 shrink-0">
+          <Button
+            @click="showCollections = !showCollections"
+            size="icon"
+            variant="ghost"
+            class="h-7 w-7"
+            :class="{ 'bg-accent text-accent-foreground': showCollections }"
+            :title="t('actions.collections')"
+          >
+            <Folder class="w-4 h-4" />
+          </Button>
           <Button
             @click="togglePause"
             size="icon"
@@ -226,28 +364,99 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- List -->
-    <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-      <TransitionGroup name="list">
+    <div class="flex-1 flex overflow-hidden">
+      <!-- Collections Sidebar -->
+      <div
+        v-if="showCollections"
+        class="w-48 border-r border-border bg-card/30 backdrop-blur-sm flex flex-col"
+      >
+        <div class="p-2 border-b border-border flex gap-1">
+          <Input
+            v-model="newCollectionName"
+            class="h-7 text-xs"
+            :placeholder="t('collections.newPlaceholder')"
+            @keydown.enter="handleCreateCollection"
+          />
+          <Button
+            @click="handleCreateCollection"
+            size="icon"
+            variant="ghost"
+            class="h-7 w-7"
+          >
+            <Plus class="w-4 h-4" />
+          </Button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-1 space-y-0.5">
+          <Button
+            @click="activeCollectionId = null"
+            variant="ghost"
+            size="sm"
+            class="w-full justify-start text-xs"
+            :class="{ 'bg-accent': activeCollectionId === null }"
+          >
+            <Hash class="w-3 h-3 mr-2" />
+            {{ t("collections.all") }}
+          </Button>
+          <div
+            v-for="collection in collections"
+            :key="collection.id"
+            class="group flex items-center"
+          >
+            <Button
+              @click="activeCollectionId = collection.id"
+              variant="ghost"
+              size="sm"
+              class="flex-1 justify-start text-xs truncate"
+              :class="{ 'bg-accent': activeCollectionId === collection.id }"
+            >
+              <Folder class="w-3 h-3 mr-2 shrink-0" />
+              <span class="truncate">{{ collection.name }}</span>
+            </Button>
+            <Button
+              @click.stop="deleteCollection(collection.id)"
+              variant="ghost"
+              size="icon"
+              class="h-6 w-6 opacity-0 group-hover:opacity-100"
+            >
+              <X class="w-3 h-3 text-muted-foreground hover:text-destructive" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <!-- List -->
+      <div
+        class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1"
+        @scroll="handleScroll"
+      >
         <div
           v-for="(item, index) in filteredHistory"
           :key="item.id || item.timestamp"
-          class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer p-3"
+          class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer"
           :class="[
             index === selectedIndex
               ? 'bg-accent border-primary/20 selected-item'
               : '',
+            config.compact_mode ? 'p-1.5' : 'p-3',
           ]"
+          draggable="true"
+          @dragstart="handleDragStart($event, item)"
           @click="pasteItem(item, false)"
           @mouseenter="selectedIndex = index"
         >
           <!-- Content -->
-          <div class="flex gap-3 items-start">
+          <div
+            class="flex gap-3"
+            :class="config.compact_mode ? 'items-center' : 'items-start'"
+          >
             <div
-              class="mt-0.5 p-1.5 rounded-md bg-muted text-muted-foreground shrink-0 relative"
+              class="rounded-md bg-muted text-muted-foreground shrink-0 relative"
+              :class="config.compact_mode ? 'p-1' : 'mt-0.5 p-1.5'"
             >
-              <FileText v-if="item.kind === 'text'" class="w-4 h-4" />
-              <ImageIcon v-else class="w-4 h-4" />
+              <component
+                :is="getItemIcon(item)"
+                :class="config.compact_mode ? 'w-3.5 h-3.5' : 'w-4 h-4'"
+              />
               <div
                 v-if="item.is_pinned"
                 class="absolute -top-1 -right-1 bg-primary text-primary-foreground rounded-full p-0.5 shadow-sm"
@@ -256,31 +465,72 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="flex-1 min-w-0">
-              <div class="flex justify-between items-baseline mb-0.5">
+              <div
+                class="flex justify-between items-baseline"
+                :class="config.compact_mode ? '' : 'mb-0.5'"
+              >
+                <div
+                  class="flex items-center gap-2"
+                  v-if="!config.compact_mode"
+                >
+                  <span
+                    class="text-[10px] font-mono text-muted-foreground opacity-70"
+                    >{{ formatTimeAgo(item.timestamp) }}</span
+                  >
+                  <span
+                    v-if="item.source_app"
+                    class="text-[10px] text-muted-foreground/60 truncate max-w-[100px]"
+                    :title="item.source_app"
+                  >
+                    {{ item.source_app }}
+                  </span>
+                </div>
+              </div>
+              <div
+                v-if="config.compact_mode"
+                class="flex items-center justify-between gap-2"
+              >
+                <p
+                  v-if="item.kind === 'text'"
+                  class="text-xs text-foreground line-clamp-1 break-all font-medium flex-1"
+                  :class="{
+                    'blur-sm group-hover:blur-none transition-all':
+                      item.is_sensitive,
+                  }"
+                >
+                  {{ item.content }}
+                </p>
+                <div v-else class="flex items-center gap-2 flex-1">
+                  <span class="text-xs text-muted-foreground italic"
+                    >[Image]</span
+                  >
+                </div>
                 <span
-                  class="text-[10px] font-mono text-muted-foreground opacity-70"
+                  class="text-[9px] font-mono text-muted-foreground opacity-50 shrink-0"
                   >{{ formatTimeAgo(item.timestamp) }}</span
                 >
               </div>
-              <p
-                v-if="item.kind === 'text'"
-                class="text-sm text-foreground line-clamp-2 break-all font-medium"
-                :class="{
-                  'blur-sm group-hover:blur-none transition-all':
-                    item.is_sensitive,
-                }"
-              >
-                {{ item.content }}
-              </p>
-              <div
-                v-else
-                class="h-16 w-full rounded-md overflow-hidden bg-muted/50 border border-border mt-1"
-              >
-                <LocalImage
-                  :src="item.content"
-                  class="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-                />
-              </div>
+              <template v-else>
+                <p
+                  v-if="item.kind === 'text'"
+                  class="text-sm text-foreground line-clamp-2 break-all font-medium"
+                  :class="{
+                    'blur-sm group-hover:blur-none transition-all':
+                      item.is_sensitive,
+                  }"
+                >
+                  {{ item.content }}
+                </p>
+                <div
+                  v-else
+                  class="h-16 w-full rounded-md overflow-hidden bg-muted/50 border border-border mt-1"
+                >
+                  <LocalImage
+                    :src="item.content"
+                    class="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                  />
+                </div>
+              </template>
             </div>
           </div>
 
@@ -289,6 +539,25 @@ onUnmounted(() => {
             class="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border"
             @click.stop
           >
+            <Button
+              v-if="item.source_app"
+              @click.stop="addSensitiveApp(item.source_app)"
+              size="icon"
+              variant="ghost"
+              class="h-6 w-6 text-muted-foreground hover:text-destructive"
+              :title="t('actions.blockApp', { app: item.source_app })"
+            >
+              <Ban class="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              @click.stop="itemToAddToCollection = item"
+              size="icon"
+              variant="ghost"
+              class="h-6 w-6 text-muted-foreground hover:text-primary"
+              :title="t('actions.addToCollection')"
+            >
+              <FolderPlus class="w-3.5 h-3.5" />
+            </Button>
             <Button
               @click.stop="togglePin(index)"
               size="icon"
@@ -349,15 +618,15 @@ onUnmounted(() => {
             <Lock class="w-3 h-3 text-yellow-600/50" />
           </div>
         </div>
-      </TransitionGroup>
 
-      <div
-        v-if="filteredHistory.length === 0"
-        class="flex flex-col items-center justify-center h-40 text-muted-foreground"
-      >
-        <Command class="w-8 h-8 mb-2 opacity-20" />
-        <p class="text-sm">{{ t("emptyState.title") }}</p>
-        <p class="text-xs opacity-50 mt-1">{{ t("emptyState.subtitle") }}</p>
+        <div
+          v-if="filteredHistory.length === 0"
+          class="flex flex-col items-center justify-center h-40 text-muted-foreground"
+        >
+          <Command class="w-8 h-8 mb-2 opacity-20" />
+          <p class="text-sm">{{ t("emptyState.title") }}</p>
+          <p class="text-xs opacity-50 mt-1">{{ t("emptyState.subtitle") }}</p>
+        </div>
       </div>
     </div>
     <!-- Footer Hint -->
@@ -380,6 +649,12 @@ onUnmounted(() => {
       </div>
       <div class="flex items-center gap-1">
         <span>{{ config.shortcut }}</span>
+        <div
+          v-if="isLoading"
+          class="py-4 text-center text-xs text-muted-foreground"
+        >
+          Loading...
+        </div>
       </div>
     </div>
 
@@ -437,6 +712,14 @@ onUnmounted(() => {
         <div
           class="p-3 border-t border-border bg-muted/30 flex justify-end gap-2"
         >
+          <Button
+            v-if="previewItem.kind === 'image'"
+            @click="ocrImage(previewItem!)"
+            variant="secondary"
+            class="gap-2"
+          >
+            <ScanText class="w-4 h-4" /> {{ t("actions.ocr") }}
+          </Button>
           <Button
             @click="
               pasteItem(previewItem!, false);
@@ -615,6 +898,22 @@ onUnmounted(() => {
 
           <div class="flex items-center justify-between py-2">
             <label class="text-sm font-medium text-foreground">{{
+              t("settings.compactMode")
+            }}</label>
+            <div
+              @click="tempCompactMode = !tempCompactMode"
+              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              :class="tempCompactMode ? 'bg-primary' : 'bg-input'"
+            >
+              <span
+                class="pointer-events-none block h-5 w-5 transform rounded-full bg-background shadow-lg ring-0 transition duration-200 ease-in-out"
+                :class="tempCompactMode ? 'translate-x-5' : 'translate-x-0'"
+              />
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between py-2">
+            <label class="text-sm font-medium text-foreground">{{
               t("settings.startAtLogin")
             }}</label>
             <button
@@ -644,6 +943,61 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+    <!-- Collection Selector Modal -->
+    <div
+      v-if="itemToAddToCollection"
+      class="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      @click.self="itemToAddToCollection = null"
+    >
+      <div
+        class="bg-card rounded-xl shadow-2xl border border-border max-w-sm w-full flex flex-col overflow-hidden"
+      >
+        <div
+          class="p-4 border-b border-border flex justify-between items-center"
+        >
+          <h3 class="font-medium text-sm">
+            {{ t("actions.addToCollection") }}
+          </h3>
+          <Button
+            @click="itemToAddToCollection = null"
+            size="icon"
+            variant="ghost"
+            class="h-6 w-6"
+          >
+            <X class="w-4 h-4" />
+          </Button>
+        </div>
+        <div class="p-2 overflow-y-auto max-h-[300px] space-y-1">
+          <Button
+            @click="handleAddToCollection(null)"
+            variant="ghost"
+            size="sm"
+            class="w-full justify-start text-xs"
+            :class="{
+              'bg-accent': itemToAddToCollection.collection_id === null,
+            }"
+          >
+            <X class="w-3 h-3 mr-2" />
+            {{ t("collections.removeFromCollection") }}
+          </Button>
+          <Button
+            v-for="collection in collections"
+            :key="collection.id"
+            @click="handleAddToCollection(collection.id)"
+            variant="ghost"
+            size="sm"
+            class="w-full justify-start text-xs"
+            :class="{
+              'bg-accent':
+                itemToAddToCollection.collection_id === collection.id,
+            }"
+          >
+            <Folder class="w-3 h-3 mr-2" />
+            {{ collection.name }}
+          </Button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -660,16 +1014,6 @@ onUnmounted(() => {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground));
-}
-
-.list-enter-active,
-.list-leave-active {
-  transition: all 0.3s ease;
-}
-.list-enter-from,
-.list-leave-to {
-  opacity: 0;
-  transform: translateX(-20px);
 }
 
 .fade-enter-active,

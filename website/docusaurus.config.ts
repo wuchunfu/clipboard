@@ -7,7 +7,7 @@ import type * as Preset from "@docusaurus/preset-classic";
 const config: Config = {
   title: "Clipboard Manager",
   tagline: "A modern, lightweight clipboard manager",
-  favicon: "img/favicon.ico",
+  favicon: "img/logo.svg",
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
@@ -64,8 +64,6 @@ const config: Config = {
   ],
 
   themeConfig: {
-    // Replace with your project's social card
-    image: "img/docusaurus-social-card.jpg",
     colorMode: {
       respectPrefersColorScheme: true,
     },
@@ -73,7 +71,7 @@ const config: Config = {
       title: "Clipboard Manager",
       logo: {
         alt: "Clipboard Manager Logo",
-        src: "img/logo.png",
+        src: "img/logo.svg",
       },
       items: [
         {

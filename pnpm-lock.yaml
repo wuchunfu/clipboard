@@ -35,6 +35,9 @@ dependencies:
   vue-i18n:
     specifier: '9'
     version: 9.14.5(vue@3.5.25)
+  vue-virtual-scroller:
+    specifier: 2.0.0-beta.8
+    version: 2.0.0-beta.8(vue@3.5.25)
 
 devDependencies:
   '@tauri-apps/cli':
@@ -1335,6 +1338,10 @@ packages:
       brace-expansion: 2.0.2
     dev: true
 
+  /mitt@2.1.0:
+    resolution: {integrity: sha512-ILj2TpLiysu2wkBbWjAmww7TkZb65aiQO+DkVdUTBpBXq+MHYiETENkKFMtsJZX1Lf4pe4QOrTSjIfUwN5lRdg==}
+    dev: false
+
   /muggle-string@0.4.1:
     resolution: {integrity: sha512-VNTrAak/KhO2i8dqqnqnAHOa3cYBwXEZe9h+D5h/1ZqFSTEFHdM65lR7RoIqq3tBBYavsOXV84NoHXZ0AkPyqQ==}
     dev: true
@@ -1533,6 +1540,22 @@ packages:
       vue: 3.5.25(typescript@5.6.3)
     dev: false
 
+  /vue-observe-visibility@2.0.0-alpha.1(vue@3.5.25):
+    resolution: {integrity: sha512-flFbp/gs9pZniXR6fans8smv1kDScJ8RS7rEpMjhVabiKeq7Qz3D9+eGsypncjfIyyU84saU88XZ0zjbD6Gq/g==}
+    peerDependencies:
+      vue: ^3.0.0
+    dependencies:
+      vue: 3.5.25(typescript@5.6.3)
+    dev: false
+
+  /vue-resize@2.0.0-alpha.1(vue@3.5.25):
+    resolution: {integrity: sha512-7+iqOueLU7uc9NrMfrzbG8hwMqchfVfSzpVlCMeJQe4pyibqyoifDNbKTZvwxZKDvGkB+PdFeKvnGZMoEb8esg==}
+    peerDependencies:
+      vue: ^3.0.0
+    dependencies:
+      vue: 3.5.25(typescript@5.6.3)
+    dev: false
+
   /vue-tsc@2.2.12(typescript@5.6.3):
     resolution: {integrity: sha512-P7OP77b2h/Pmk+lZdJ0YWs+5tJ6J2+uOQPo7tlBnY44QqQSPYvS0qVT4wqDJgwrZaLe47etJLLQRFia71GYITw==}
     hasBin: true
@@ -1543,6 +1566,17 @@ packages:
       '@vue/language-core': 2.2.12(typescript@5.6.3)
       typescript: 5.6.3
     dev: true
+
+  /vue-virtual-scroller@2.0.0-beta.8(vue@3.5.25):
+    resolution: {integrity: sha512-b8/f5NQ5nIEBRTNi6GcPItE4s7kxNHw2AIHLtDp+2QvqdTjVN0FgONwX9cr53jWRgnu+HRLPaWDOR2JPI5MTfQ==}
+    peerDependencies:
+      vue: ^3.2.0
+    dependencies:
+      mitt: 2.1.0
+      vue: 3.5.25(typescript@5.6.3)
+      vue-observe-visibility: 2.0.0-alpha.1(vue@3.5.25)
+      vue-resize: 2.0.0-alpha.1(vue@3.5.25)
+    dev: false
 
   /vue@3.5.25(typescript@5.6.3):
     resolution: {integrity: sha512-YLVdgv2K13WJ6n+kD5owehKtEXwdwXuj2TTyJMsO7pSeKw2bfRNZGjhB7YzrpbMYj5b5QsUebHpOqR3R3ziy/g==}
