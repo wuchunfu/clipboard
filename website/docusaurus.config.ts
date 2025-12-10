@@ -52,6 +52,8 @@ const config: Config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl: "https://github.com/tipsxBase/clipboard/tree/main/website/",
+          // Allow editing localized files (e.g. zh-CN)
+          editLocalizedFiles: true,
         },
         blog: false, // Disable blog
         theme: {
