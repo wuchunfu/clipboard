@@ -12,7 +12,7 @@ Clipboard Manager 支持主流的桌面操作系统。请根据您的系统选�
 
 ### macOS 用户
 
-- **下载**: 选择 `.dmg` 文件 (例如 `Clipboard-Manager_x.x.x_universal.dmg`)。
+- **下载**: 根据您的 Mac 芯片类型（Apple Silicon 或 Intel）选择对应的 `.dmg` 文件。
 - **安装**: 双击 `.dmg` 文件，将应用图标拖入 `Applications` 文件夹。
 - **权限**: 首次运行时，系统可能会提示需要辅助功能权限（用于监听剪贴板快捷键），请按照提示在“系统设置 -> 隐私与安全性 -> 辅助功能”中授权。
 

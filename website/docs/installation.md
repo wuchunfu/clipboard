@@ -12,7 +12,7 @@ Please visit our [GitHub Releases](https://github.com/tipsxBase/clipboard/releas
 
 ### macOS Users
 
-- **Download**: Select the `.dmg` file (e.g., `Clipboard-Manager_x.x.x_universal.dmg`).
+- **Download**: Select the `.dmg` file appropriate for your architecture (Apple Silicon or Intel).
 - **Install**: Double-click the `.dmg` file and drag the app icon into the `Applications` folder.
 - **Permissions**: Upon first launch, the system may prompt for accessibility permissions (to listen for clipboard shortcuts). Please follow the instructions to authorize in "System Settings -> Privacy & Security -> Accessibility".
 
