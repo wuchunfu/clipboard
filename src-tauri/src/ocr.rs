@@ -78,7 +78,7 @@ pub fn recognize_text(image_path: &str) -> Result<String, String> {
 use windows::{
     core::HSTRING,
     Foundation,
-    Graphics::Imaging::BitmapDecoder,
+    Graphics::Imaging::{BitmapAlphaMode, BitmapDecoder, BitmapPixelFormat, SoftwareBitmap},
     Media::Ocr::OcrEngine,
     Storage::{FileAccessMode, StorageFile},
 };
@@ -90,39 +90,103 @@ pub fn recognize_text(image_path: &str) -> Result<String, String> {
 
 #[cfg(target_os = "windows")]
 async fn recognize_text_async(image_path: &str) -> Result<String, String> {
+    log::info!("recognize_text_async called with path: {}", image_path);
     let path = std::path::Path::new(image_path);
-    let absolute_path = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
+    let absolute_path = std::fs::canonicalize(path).map_err(|e| {
+        log::error!("Failed to canonicalize path: {}", e);
+        e.to_string()
+    })?;
     let path_string = absolute_path.to_string_lossy().to_string();
+    log::info!("Absolute path: {}", path_string);
 
     let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(&path_string))
-        .map_err(|e| e.to_string())?
+        .map_err(|e| {
+            log::error!("GetFileFromPathAsync failed: {}", e);
+            e.to_string()
+        })?
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            log::error!("GetFileFromPathAsync await failed: {}", e);
+            e.to_string()
+        })?;
+    log::info!("File opened successfully");
 
     let stream = file
         .OpenAsync(FileAccessMode::Read)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| {
+            log::error!("OpenAsync failed: {}", e);
+            e.to_string()
+        })?
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            log::error!("OpenAsync await failed: {}", e);
+            e.to_string()
+        })?;
+    log::info!("Stream opened successfully");
 
     let decoder = BitmapDecoder::CreateAsync(&stream)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| {
+            log::error!("BitmapDecoder::CreateAsync failed: {}", e);
+            e.to_string()
+        })?
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            log::error!("BitmapDecoder::CreateAsync await failed: {}", e);
+            e.to_string()
+        })?;
+    log::info!("Decoder created successfully");
 
     let bitmap = decoder
         .GetSoftwareBitmapAsync()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| {
+            log::error!("GetSoftwareBitmapAsync failed: {}", e);
+            e.to_string()
+        })?
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            log::error!("GetSoftwareBitmapAsync await failed: {}", e);
+            e.to_string()
+        })?;
+    log::info!("Bitmap obtained successfully");
 
-    let engine = OcrEngine::TryCreateFromUserProfileLanguages().map_err(|e| e.to_string())?;
+    // Ensure the bitmap is in the correct format for OCR (Bgra8, Premultiplied)
+    let bitmap = if bitmap.BitmapPixelFormat().map_err(|e| e.to_string())?
+        != BitmapPixelFormat::Bgra8
+        || bitmap.BitmapAlphaMode().map_err(|e| e.to_string())? != BitmapAlphaMode::Premultiplied
+    {
+        log::info!("Converting bitmap format to Bgra8 Premultiplied");
+        SoftwareBitmap::Convert(
+            &bitmap,
+            BitmapPixelFormat::Bgra8,
+            BitmapAlphaMode::Premultiplied,
+        )
+        .map_err(|e| {
+            log::error!("SoftwareBitmap::Convert failed: {}", e);
+            e.to_string()
+        })?
+    } else {
+        log::info!("Bitmap format is already correct");
+        bitmap
+    };
+
+    let engine = OcrEngine::TryCreateFromUserProfileLanguages().map_err(|e| {
+        log::error!("TryCreateFromUserProfileLanguages failed: {}", e);
+        e.to_string()
+    })?;
+    log::info!("OcrEngine created successfully");
 
     let result = engine
         .RecognizeAsync(&bitmap)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| {
+            log::error!("RecognizeAsync failed: {}", e);
+            e.to_string()
+        })?
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            log::error!("RecognizeAsync await failed: {}", e);
+            e.to_string()
+        })?;
+    log::info!("Recognition completed");
 
     let lines = result.Lines().map_err(|e| e.to_string())?;
     let mut full_text = String::new();
@@ -132,6 +196,8 @@ async fn recognize_text_async(image_path: &str) -> Result<String, String> {
         full_text.push_str(&text.to_string_lossy());
         full_text.push('\n');
     }
+
+    log::info!("OCR Result length: {}", full_text.len());
 
     Ok(full_text.trim().to_string())
 }

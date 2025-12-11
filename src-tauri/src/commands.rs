@@ -319,5 +319,15 @@ pub fn set_paste_stack(
 
 #[tauri::command]
 pub fn ocr_image(image_path: String) -> Result<String, String> {
-    recognize_text(&image_path)
+    log::info!("Starting OCR for image: {}", image_path);
+    match recognize_text(&image_path) {
+        Ok(text) => {
+            log::info!("OCR successful, text length: {}", text.len());
+            Ok(text)
+        }
+        Err(e) => {
+            log::error!("OCR failed: {}", e);
+            Err(e)
+        }
+    }
 }
