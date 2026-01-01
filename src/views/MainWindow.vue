@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n } from "vue-i18n";
+import { toTypedSchema } from "@vee-validate/zod";
+import * as z from "zod";
+import { useForm } from "vee-validate";
 import {
   Search,
   Settings,
@@ -32,13 +35,34 @@ import {
 } from "lucide-vue-next";
 import Button from "@/components/ui/button/Button.vue";
 import Input from "@/components/ui/input/Input.vue";
+import { Switch } from "@/components/ui/switch";
+import {
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormDescription,
+} from "@/components/ui/form";
 import { useClipboard } from "@/composables/useClipboard";
 import { useSettings } from "@/composables/useSettings";
 import { useToast } from "@/composables/useToast";
 import { useTimeAgo } from "@/composables/useTimeAgo";
 import type { ClipboardItem } from "@/types";
-
+import {
+  Dialog,
+  DialogHeader,
+  DialogDescription,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import LocalImage from "@/components/LocalImage.vue";
+import Select from "@/components/ui/select/Select.vue";
+import SelectTrigger from "@/components/ui/select/SelectTrigger.vue";
+import SelectValue from "@/components/ui/select/SelectValue.vue";
+import SelectContent from "@/components/ui/select/SelectContent.vue";
+import SelectGroup from "@/components/ui/select/SelectGroup.vue";
+import SelectItem from "@/components/ui/select/SelectItem.vue";
 
 const { t } = useI18n();
 const { toastMessage } = useToast();
@@ -92,6 +116,8 @@ const {
   tempTheme,
   tempSensitiveApps,
   tempCompactMode,
+  tempClearPinnedOnClear,
+  tempClearCollectedOnClear,
   isRecording,
   isPaused,
   isAutoStart,
@@ -104,6 +130,64 @@ const {
   handleShortcutKeydown,
   setupConfigListeners,
 } = useSettings();
+
+// Form schema
+const formSchema = toTypedSchema(
+  z.object({
+    shortcut: z.string().min(1, "Shortcut is required"),
+    max_history_size: z.number().min(5).max(1000),
+    language: z.string(),
+    theme: z.string(),
+    sensitive_apps: z.array(z.string()),
+    compact_mode: z.boolean(),
+    clear_pinned_on_clear: z.boolean(),
+    clear_collected_on_clear: z.boolean(),
+  })
+);
+
+const form = useForm({
+  validationSchema: formSchema,
+  initialValues: {
+    shortcut: tempShortcut.value,
+    max_history_size: tempMaxSize.value,
+    language: tempLanguage.value,
+    theme: tempTheme.value,
+    sensitive_apps: tempSensitiveApps.value,
+    compact_mode: tempCompactMode.value,
+    clear_pinned_on_clear: tempClearPinnedOnClear.value,
+    clear_collected_on_clear: tempClearCollectedOnClear.value,
+  },
+});
+
+const onSubmit = form.handleSubmit(async (values) => {
+  tempShortcut.value = values.shortcut;
+  tempMaxSize.value = values.max_history_size;
+  tempLanguage.value = values.language;
+  tempTheme.value = values.theme;
+  tempSensitiveApps.value = values.sensitive_apps;
+  tempCompactMode.value = values.compact_mode;
+  tempClearPinnedOnClear.value = values.clear_pinned_on_clear;
+  tempClearCollectedOnClear.value = values.clear_collected_on_clear;
+  await saveConfig();
+});
+
+// Watch showSettings to reset form values when opened
+watch(showSettings, (isOpen) => {
+  if (isOpen) {
+    form.resetForm({
+      values: {
+        shortcut: tempShortcut.value,
+        max_history_size: tempMaxSize.value,
+        language: tempLanguage.value,
+        theme: tempTheme.value,
+        sensitive_apps: [...tempSensitiveApps.value],
+        compact_mode: tempCompactMode.value,
+        clear_pinned_on_clear: tempClearPinnedOnClear.value,
+        clear_collected_on_clear: tempClearCollectedOnClear.value,
+      },
+    });
+  }
+});
 
 const newAppInput = ref("");
 const showClearConfirm = ref(false);
@@ -128,7 +212,9 @@ async function handleAddToCollection(collectionId: number | null) {
 function addSensitiveApp(appName?: string) {
   const app = appName || newAppInput.value.trim();
   if (app) {
-    if (!tempSensitiveApps.value.includes(app)) {
+    const currentApps = form.values.sensitive_apps || [];
+    if (!currentApps.includes(app)) {
+      form.setFieldValue("sensitive_apps", [...currentApps, app]);
       tempSensitiveApps.value.push(app);
       if (appName) {
         // If added via button, save immediately
@@ -197,6 +283,11 @@ function getFilterIcon(filter: string) {
 }
 
 function removeSensitiveApp(app: string) {
+  const currentApps = form.values.sensitive_apps || [];
+  form.setFieldValue(
+    "sensitive_apps",
+    currentApps.filter((a) => a !== app)
+  );
   tempSensitiveApps.value = tempSensitiveApps.value.filter((a) => a !== app);
 }
 
@@ -733,22 +824,18 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Clear History Confirmation Modal -->
-    <div
-      v-if="showClearConfirm"
-      class="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="showClearConfirm = false"
-    >
-      <div class="bg-card rounded-xl p-6 w-80 border border-border shadow-2xl">
-        <h2
-          class="text-lg font-bold mb-4 flex items-center gap-2 text-destructive"
-        >
-          <Trash2 class="w-5 h-5" /> {{ t("actions.clearHistory") }}
-        </h2>
-        <p class="text-sm text-muted-foreground mb-6">
+    <!-- Clear History Confirmation Dialog -->
+    <Dialog v-model:open="showClearConfirm">
+      <DialogContent class="w-80">
+        <DialogHeader>
+          <DialogTitle class="flex items-center gap-2 text-destructive">
+            <Trash2 class="w-5 h-5" /> {{ t("actions.clearHistory") }}
+          </DialogTitle>
+        </DialogHeader>
+        <DialogDescription class="mb-6">
           {{ t("toast.confirmClearHistory") }}
-        </p>
-        <div class="flex gap-3">
+        </DialogDescription>
+        <DialogFooter class="flex gap-3">
           <Button
             @click="
               clearHistory();
@@ -766,183 +853,262 @@ onUnmounted(() => {
           >
             {{ t("settings.cancel") }}
           </Button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
-    <!-- Settings Modal -->
-    <div
-      v-if="showSettings"
-      class="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="showSettings = false"
-    >
-      <div class="bg-card rounded-xl p-6 w-96 border border-border shadow-2xl">
-        <h2 class="text-lg font-bold mb-6 flex items-center gap-2">
-          <Settings class="w-5 h-5 text-primary" /> {{ t("settings.title") }}
-        </h2>
-
-        <div class="space-y-5">
-          <div>
-            <label
-              class="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2"
-              >{{ t("settings.globalShortcut") }}</label
+    <!-- Settings Dialog -->
+    <Dialog v-model:open="showSettings">
+      <DialogContent class="w-[800px]! max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle class="flex items-center gap-2">
+            <Settings class="w-5 h-5 text-primary" /> {{ t("settings.title") }}
+          </DialogTitle>
+        </DialogHeader>
+        <form @submit="onSubmit">
+          <div class="grid grid-cols-2 gap-x-4 gap-y-4 mt-4">
+            <!-- Global Shortcut -->
+            <FormField
+              v-slot="{ componentField }"
+              name="shortcut"
+              class="col-span-2"
             >
-            <div class="relative">
-              <Input
-                v-model="tempShortcut"
-                readonly
-                :placeholder="t('settings.recordShortcut')"
-                class="cursor-pointer"
-                @click="startRecording"
-                @keydown="handleShortcutKeydown"
-              />
-              <span
-                v-if="isRecording"
-                class="absolute right-3 top-1/2 transform -translate-y-1/2 flex h-2 w-2"
-              >
-                <span
-                  class="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"
-                ></span>
-                <span
-                  class="relative inline-flex rounded-full h-2 w-2 bg-destructive"
-                ></span>
-              </span>
-            </div>
-          </div>
-
-          <div>
-            <label
-              class="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2"
-              >{{ t("settings.historySize") }}</label
-            >
-            <Input
-              v-model.number="tempMaxSize"
-              type="number"
-              min="5"
-              max="1000"
-            />
-          </div>
-
-          <div>
-            <label
-              class="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2"
-              >{{ t("settings.language") }}</label
-            >
-            <div class="relative">
-              <select
-                v-model="tempLanguage"
-                class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
-              >
-                <option value="auto">{{ t("settings.languageAuto") }}</option>
-                <option value="en">{{ t("settings.languageEn") }}</option>
-                <option value="zh">{{ t("settings.languageZh") }}</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label
-              class="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2"
-              >{{ t("settings.theme") }}</label
-            >
-            <div class="relative">
-              <select
-                v-model="tempTheme"
-                class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
-              >
-                <option value="auto">{{ t("settings.themeAuto") }}</option>
-                <option value="light">{{ t("settings.themeLight") }}</option>
-                <option value="dark">{{ t("settings.themeDark") }}</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label
-              class="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2"
-              >{{ t("settings.sensitiveApps") }}</label
-            >
-            <div class="space-y-2">
-              <div class="flex gap-2">
-                <Input
-                  v-model="newAppInput"
-                  :placeholder="t('settings.appNamePlaceholder')"
-                  @keydown.enter="addSensitiveApp"
-                />
-                <Button
-                  @click="addSensitiveApp"
-                  size="icon"
-                  variant="secondary"
-                  class="shrink-0"
+              <FormItem class="col-span-2">
+                <FormLabel
+                  class="text-xs font-bold text-muted-foreground uppercase tracking-wider"
                 >
-                  <Plus class="w-4 h-4" />
-                </Button>
-              </div>
-              <div class="max-h-32 overflow-y-auto custom-scrollbar space-y-1">
-                <div
-                  v-for="app in tempSensitiveApps"
-                  :key="app"
-                  class="flex items-center justify-between bg-muted/50 px-3 py-1.5 rounded text-sm"
+                  {{ t("settings.globalShortcut") }}
+                </FormLabel>
+                <FormControl>
+                  <div class="relative">
+                    <Input
+                      readonly
+                      :placeholder="t('settings.recordShortcut')"
+                      class="cursor-pointer"
+                      :model-value="componentField.modelValue"
+                      @click="startRecording"
+                      @keydown="handleShortcutKeydown"
+                      @blur="componentField.onBlur"
+                    />
+                    <span
+                      v-if="isRecording"
+                      class="absolute right-3 top-1/2 transform -translate-y-1/2 flex h-2 w-2"
+                    >
+                      <span
+                        class="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"
+                      ></span>
+                      <span
+                        class="relative inline-flex rounded-full h-2 w-2 bg-destructive"
+                      ></span>
+                    </span>
+                  </div>
+                </FormControl>
+              </FormItem>
+            </FormField>
+
+            <!-- History Size -->
+            <FormField v-slot="{ componentField }" name="max_history_size">
+              <FormItem>
+                <FormLabel
+                  class="text-xs font-bold text-muted-foreground uppercase tracking-wider"
                 >
-                  <span class="truncate">{{ app }}</span>
-                  <button
-                    @click="removeSensitiveApp(app)"
-                    class="text-muted-foreground hover:text-destructive transition-colors ml-2"
+                  {{ t("settings.historySize") }}
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    type="number"
+                    min="5"
+                    max="1000"
+                    :model-value="componentField.modelValue"
+                    @update:model-value="componentField['onUpdate:modelValue']"
+                    @blur="componentField.onBlur"
+                  />
+                </FormControl>
+              </FormItem>
+            </FormField>
+
+            <!-- Language -->
+            <FormField v-slot="{ componentField }" name="language">
+              <FormItem>
+                <FormLabel
+                  class="text-xs font-bold text-muted-foreground uppercase tracking-wider"
+                >
+                  {{ t("settings.language") }}
+                </FormLabel>
+                <FormControl>
+                  <Select v-bind="componentField">
+                    <SelectTrigger class="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">
+                        {{ t("settings.languageAuto") }}
+                      </SelectItem>
+                      <SelectItem value="en">{{
+                        t("settings.languageEn")
+                      }}</SelectItem>
+                      <SelectItem value="zh"
+                        >{{ t("settings.languageZh") }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormControl>
+              </FormItem>
+            </FormField>
+
+            <!-- Theme -->
+            <FormField v-slot="{ componentField }" name="theme">
+              <FormItem>
+                <FormLabel
+                  class="text-xs font-bold text-muted-foreground uppercase tracking-wider"
+                >
+                  {{ t("settings.theme") }}
+                </FormLabel>
+                <FormControl>
+                  <Select v-bind="componentField">
+                    <SelectTrigger class="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">{{
+                        t("settings.themeAuto")
+                      }}</SelectItem>
+                      <SelectItem value="light">
+                        {{ t("settings.themeLight") }}
+                      </SelectItem>
+                      <SelectItem value="dark">{{
+                        t("settings.themeDark")
+                      }}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormControl>
+              </FormItem>
+            </FormField>
+            <!-- Compact Mode -->
+            <FormField v-slot="componentField" name="compact_mode">
+              <FormItem class="flex flex-col">
+                <FormLabel class="text-sm font-medium">
+                  {{ t("settings.compactMode") }}
+                </FormLabel>
+                <FormControl>
+                  <Switch
+                    :model-value="componentField.value"
+                    @update:model-value="componentField.handleChange"
+                  />
+                </FormControl>
+              </FormItem>
+            </FormField>
+
+            <!-- Sensitive Apps -->
+            <div class="col-span-2">
+              <label
+                class="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 block"
+              >
+                {{ t("settings.sensitiveApps") }}
+              </label>
+              <div class="space-y-2">
+                <div class="flex gap-2">
+                  <Input
+                    v-model="newAppInput"
+                    :placeholder="t('settings.appNamePlaceholder')"
+                    @keydown.enter="addSensitiveApp"
+                  />
+                  <Button
+                    @click="addSensitiveApp"
+                    type="button"
+                    size="icon"
+                    variant="secondary"
+                    class="shrink-0"
                   >
-                    <X class="w-3 h-3" />
-                  </button>
+                    <Plus class="w-4 h-4" />
+                  </Button>
+                </div>
+                <div
+                  class="max-h-32 overflow-y-auto custom-scrollbar space-y-1"
+                >
+                  <div
+                    v-for="app in form.values.sensitive_apps"
+                    :key="app"
+                    class="flex items-center justify-between bg-muted/50 px-3 py-1.5 rounded text-sm"
+                  >
+                    <span class="truncate">{{ app }}</span>
+                    <button
+                      @click="removeSensitiveApp(app)"
+                      type="button"
+                      class="text-muted-foreground hover:text-destructive transition-colors ml-2"
+                    >
+                      <X class="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div class="flex items-center justify-between py-2">
-            <label class="text-sm font-medium text-foreground">{{
-              t("settings.compactMode")
-            }}</label>
-            <div
-              @click="tempCompactMode = !tempCompactMode"
-              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              :class="tempCompactMode ? 'bg-primary' : 'bg-input'"
-            >
-              <span
-                class="pointer-events-none block h-5 w-5 transform rounded-full bg-background shadow-lg ring-0 transition duration-200 ease-in-out"
-                :class="tempCompactMode ? 'translate-x-5' : 'translate-x-0'"
-              />
+            <!-- Clear Pinned on Clear -->
+            <FormField v-slot="componentField" name="clear_pinned_on_clear">
+              <FormItem class="flex flex-col">
+                <FormLabel class="text-sm font-medium">
+                  清除时包含置顶项
+                </FormLabel>
+                <FormControl>
+                  <Switch
+                    :model-value="componentField.value"
+                    @update:model-value="componentField.handleChange"
+                  />
+                </FormControl>
+                <FormDescription class="text-xs">
+                  开启后清空历史时会同时清除置顶的项目
+                </FormDescription>
+              </FormItem>
+            </FormField>
+
+            <!-- Clear Collected on Clear -->
+            <FormField v-slot="componentField" name="clear_collected_on_clear">
+              <FormItem class="flex flex-col">
+                <FormLabel class="text-sm font-medium">
+                  清除时包含收藏项
+                </FormLabel>
+                <FormControl>
+                  <Switch
+                    :model-value="componentField.value"
+                    @update:model-value="componentField.handleChange"
+                  />
+                </FormControl>
+                <FormDescription class="text-xs">
+                  开启后清空历史时会同时清除已收藏的项目
+                </FormDescription>
+              </FormItem>
+            </FormField>
+
+            <!-- Start at Login -->
+            <div class="col-span-2">
+              <div class="flex items-center justify-between py-2">
+                <label class="text-sm font-medium text-foreground">
+                  {{ t("settings.startAtLogin") }}
+                </label>
+                <Switch
+                  :checked="isAutoStart"
+                  @update:checked="toggleAutoStart"
+                />
+              </div>
             </div>
           </div>
-
-          <div class="flex items-center justify-between py-2">
-            <label class="text-sm font-medium text-foreground">{{
-              t("settings.startAtLogin")
-            }}</label>
-            <button
-              @click="toggleAutoStart"
-              class="w-11 h-6 rounded-full transition-colors relative focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background focus:ring-primary"
-              :class="isAutoStart ? 'bg-primary' : 'bg-muted'"
+          <DialogFooter class="flex gap-3 mt-8">
+            <Button type="submit" class="flex-1">
+              {{ t("settings.save") }}
+            </Button>
+            <Button
+              type="button"
+              @click="showSettings = false"
+              variant="secondary"
+              class="flex-1"
             >
-              <div
-                class="absolute top-1 left-1 w-4 h-4 bg-background rounded-full transition-transform shadow-sm"
-                :class="isAutoStart ? 'translate-x-5' : 'translate-x-0'"
-              ></div>
-            </button>
-          </div>
-        </div>
-
-        <div class="flex gap-3 mt-8">
-          <Button @click="saveConfig" class="flex-1">
-            {{ t("settings.save") }}
-          </Button>
-          <Button
-            @click="showSettings = false"
-            variant="secondary"
-            class="flex-1"
-          >
-            {{ t("settings.cancel") }}
-          </Button>
-        </div>
-      </div>
-    </div>
+              {{ t("settings.cancel") }}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
     <!-- Collection Selector Modal -->
     <div
       v-if="itemToAddToCollection"

@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n } from "vue-i18n";
 import { useToast } from "./useToast";
 import type { ClipboardItem, Collection } from "../types";
+import { confirm } from "@/composables/useConfirm";
 
 export function useClipboard() {
   const { t } = useI18n();
@@ -202,6 +203,14 @@ export function useClipboard() {
   }
 
   async function deleteItem(index: number) {
+    const confirmed = await confirm({
+      title: t("deleteDialog.title"),
+      description: t("deleteDialog.description"),
+      actionText: t("deleteDialog.actionText"),
+      variant: "destructive",
+    });
+    if (!confirmed) return;
+
     const item = filteredHistory.value[index];
     const realIndex = history.value.indexOf(item);
 

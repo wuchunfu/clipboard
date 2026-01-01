@@ -17,6 +17,8 @@ export function useSettings() {
     theme: "auto",
     sensitive_apps: [],
     compact_mode: false,
+    clear_pinned_on_clear: false,
+    clear_collected_on_clear: false,
   });
 
   const showSettings = ref(false);
@@ -26,6 +28,8 @@ export function useSettings() {
   const tempTheme = ref("auto");
   const tempSensitiveApps = ref<string[]>([]);
   const tempCompactMode = ref(false);
+  const tempClearPinnedOnClear = ref(false);
+  const tempClearCollectedOnClear = ref(false);
   const isRecording = ref(false);
   const isPaused = ref(false);
   const isAutoStart = ref(false);
@@ -59,6 +63,10 @@ export function useSettings() {
       tempTheme.value = config.value.theme || "auto";
       tempSensitiveApps.value = [...(config.value.sensitive_apps || [])];
       tempCompactMode.value = config.value.compact_mode || false;
+      tempClearPinnedOnClear.value =
+        config.value.clear_pinned_on_clear || false;
+      tempClearCollectedOnClear.value =
+        config.value.clear_collected_on_clear || false;
 
       // Apply language
       if (config.value.language === "auto") {
@@ -86,6 +94,8 @@ export function useSettings() {
         theme: tempTheme.value,
         sensitiveApps: tempSensitiveApps.value,
         compactMode: tempCompactMode.value,
+        clearPinnedOnClear: tempClearPinnedOnClear.value,
+        clearCollectedOnClear: tempClearCollectedOnClear.value,
       });
       await loadConfig();
       showSettings.value = false;
@@ -104,6 +114,9 @@ export function useSettings() {
     tempTheme.value = config.value.theme || "auto";
     tempSensitiveApps.value = [...(config.value.sensitive_apps || [])];
     tempCompactMode.value = config.value.compact_mode || false;
+    tempClearPinnedOnClear.value = config.value.clear_pinned_on_clear || false;
+    tempClearCollectedOnClear.value =
+      config.value.clear_collected_on_clear || false;
     isEnabled().then((enabled) => {
       isAutoStart.value = enabled;
     });
@@ -206,6 +219,8 @@ export function useSettings() {
     isRecording,
     isPaused,
     isAutoStart,
+    tempClearPinnedOnClear,
+    tempClearCollectedOnClear,
     loadConfig,
     saveConfig,
     openSettings,

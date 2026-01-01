@@ -94,8 +94,27 @@ pub fn recognize_text(image_path: &str) -> Result<String, String> {
 async fn recognize_text_async(image_path: &str) -> Result<String, String> {
     log::info!("recognize_text_async called with path: {}", image_path);
 
+    let original_path = image_path.to_string();
+    log::info!("Original path: {}", original_path);
+
+    // Pre-clean path to handle common issues before canonicalize
+    let mut cleaned_path = original_path.clone();
+    // Remove file scheme if present (file:///C:/...)
+    if cleaned_path.starts_with("file:///") {
+        cleaned_path = cleaned_path.trim_start_matches("file:///").to_string();
+        cleaned_path = cleaned_path.replace('/', "\\");
+    }
+    // Replace full-width colon (Chinese punctuation) with ASCII colon
+    if cleaned_path.contains('：') {
+        cleaned_path = cleaned_path.replace('：', ":");
+    }
+    // Remove Windows extended-length path prefix "\\?\" if present
+    if cleaned_path.starts_with("\\\\?\\") {
+        cleaned_path = cleaned_path.trim_start_matches("\\\\?\\").to_string();
+    }
+
     // 1. 简化路径处理 - 使用标准库方法
-    let path = std::path::Path::new(image_path);
+    let path = std::path::Path::new(&cleaned_path);
 
     // 2. 获取绝对路径（保留 UNC 前缀）
     let absolute_path = dunce::canonicalize(path).map_err(|e| {

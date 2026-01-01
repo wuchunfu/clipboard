@@ -236,7 +236,7 @@ impl Database {
             // Delete them
             conn.execute(
                 &format!(
-                    "DELETE FROM history WHERE id IN (SELECT id FROM history WHERE is_pinned = 0 ORDER BY timestamp ASC LIMIT {})",
+                    "DELETE FROM history WHERE id IN (SELECT id FROM history WHERE is_pinned = 0 AND collection_id IS NULL ORDER BY timestamp ASC LIMIT {})",
                     delete_count
                 ),
                 [],
@@ -367,13 +367,34 @@ impl Database {
         }
     }
 
-    pub fn clear_history(&self) -> Result<Vec<ClipboardItem>> {
+    pub fn clear_history(
+        &self,
+        clear_pinned_on_clear: bool,
+        clear_collected_on_clear: bool,
+    ) -> Result<Vec<ClipboardItem>> {
         let conn = self.conn.lock().unwrap();
 
-        // Get all items
-        let mut stmt = conn.prepare(
-            "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id FROM history",
-        )?;
+        // 构建 WHERE 条件
+        let mut conditions = Vec::new();
+        if !clear_pinned_on_clear {
+            conditions.push("is_pinned = 0");
+        }
+        if !clear_collected_on_clear {
+            conditions.push("collection_id IS NULL");
+        }
+        // 如果都为 true，则不加条件，全部清除
+        let where_clause = if conditions.is_empty() {
+            String::from("")
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+
+        // 查询所有将要被删除的项
+        let select_sql = format!(
+            "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id FROM history {}",
+            where_clause
+        );
+        let mut stmt = conn.prepare(&select_sql)?;
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
             let content: String = row.get(1)?;
@@ -409,7 +430,13 @@ impl Database {
             items.push(row?);
         }
 
-        conn.execute("DELETE FROM history", [])?;
+        // 删除这些项
+        let delete_sql = if where_clause.is_empty() {
+            String::from("DELETE FROM history")
+        } else {
+            format!("DELETE FROM history {}", where_clause)
+        };
+        conn.execute(&delete_sql, [])?;
         Ok(items)
     }
 

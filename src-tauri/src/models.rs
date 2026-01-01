@@ -41,6 +41,12 @@ pub struct AppConfig {
     pub sensitive_apps: Vec<String>,
     #[serde(default)]
     pub compact_mode: bool,
+    // 清空历史时是否清空置顶内容
+    #[serde(default)]
+    pub clear_pinned_on_clear: bool,
+    // 清空历史时是否删除收藏的内容
+    #[serde(default)]
+    pub clear_collected_on_clear: bool,
 }
 
 fn default_language() -> String {
@@ -72,6 +78,8 @@ impl Default for AppConfig {
             theme: "auto".to_string(),
             sensitive_apps: default_sensitive_apps(),
             compact_mode: false,
+            clear_pinned_on_clear: false,
+            clear_collected_on_clear: false,
         }
     }
 }

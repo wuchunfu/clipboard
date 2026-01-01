@@ -38,6 +38,7 @@ const messages = {
       collections: "Collections",
       addToCollection: "Add to Collection",
       ocr: "Extract Text",
+      deleteItem: "Delete Item",
     },
     collections: {
       all: "All Items",
@@ -49,6 +50,12 @@ const messages = {
       itemUpdated: "Item updated",
       updateFailed: "Failed to update item",
       removeFromCollection: "Remove from Collection",
+    },
+    deleteDialog: {
+      title: "Confirm Action",
+      actionText: "Confirm",
+      cancelText: "Cancel",
+      description: "Are you sure you want to delete this item?",
     },
     emptyState: {
       title: "No items found",
@@ -143,6 +150,7 @@ const messages = {
       collections: "收藏夹",
       addToCollection: "添加到收藏夹",
       ocr: "提取文字",
+      deleteItem: "删除记录",
     },
     collections: {
       all: "全部记录",
@@ -154,6 +162,12 @@ const messages = {
       itemUpdated: "记录已更新",
       updateFailed: "更新失败",
       removeFromCollection: "从收藏夹移除",
+    },
+    deleteDialog: {
+      title: "确认操作",
+      actionText: "确认",
+      cancelText: "取消",
+      description: "你确定要删除这条记录吗？",
     },
     emptyState: {
       title: "没有找到记录",

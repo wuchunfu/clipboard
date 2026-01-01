@@ -3,6 +3,7 @@ import { ref, onMounted } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import MainWindow from "@/views/MainWindow.vue";
 import PopupWindow from "@/views/PopupWindow.vue";
+import ConfirmProvider from "./components/ui/alert-dialog/ConfirmProvider.vue";
 
 const isPopup = ref(false);
 
@@ -17,4 +18,5 @@ onMounted(() => {
 <template>
   <PopupWindow v-if="isPopup" />
   <MainWindow v-else />
+  <ConfirmProvider />
 </template>

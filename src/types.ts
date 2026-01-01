@@ -23,4 +23,6 @@ export interface AppConfig {
   theme: string;
   sensitive_apps: string[];
   compact_mode?: boolean;
+  clear_pinned_on_clear?: boolean;
+  clear_collected_on_clear?: boolean;
 }

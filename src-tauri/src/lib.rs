@@ -237,7 +237,14 @@ pub fn run() {
                     }
                     "clear" => {
                         let state = app.state::<AppState>();
-                        if let Ok(_) = state.db.clear_history() {
+                        let clear_pinned_on_clear =
+                            state.config.lock().unwrap().clear_pinned_on_clear;
+                        let clear_collected_on_clear =
+                            state.config.lock().unwrap().clear_collected_on_clear;
+                        if let Ok(_) = state
+                            .db
+                            .clear_history(clear_pinned_on_clear, clear_collected_on_clear)
+                        {
                             log::info!("History cleared from tray");
                         }
                     }

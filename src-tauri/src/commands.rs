@@ -169,7 +169,10 @@ pub fn toggle_pin(state: tauri::State<AppState>, index: usize) -> Result<bool, S
 
 #[tauri::command]
 pub fn clear_history(app: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
-    match state.db.clear_history() {
+    match state.db.clear_history(
+        state.config.lock().unwrap().clear_pinned_on_clear,
+        state.config.lock().unwrap().clear_collected_on_clear,
+    ) {
         Ok(items) => {
             for item in items {
                 if item.kind == "image" {
@@ -208,6 +211,8 @@ pub fn save_config(
     theme: String,
     sensitive_apps: Vec<String>,
     compact_mode: bool,
+    clear_pinned_on_clear: bool,
+    clear_collected_on_clear: bool,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
     let old_shortcut = {
@@ -222,6 +227,8 @@ pub fn save_config(
         theme: theme.clone(),
         sensitive_apps,
         compact_mode,
+        clear_pinned_on_clear,
+        clear_collected_on_clear,
     };
 
     // Save to file
