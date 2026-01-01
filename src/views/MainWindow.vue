@@ -61,7 +61,6 @@ import Select from "@/components/ui/select/Select.vue";
 import SelectTrigger from "@/components/ui/select/SelectTrigger.vue";
 import SelectValue from "@/components/ui/select/SelectValue.vue";
 import SelectContent from "@/components/ui/select/SelectContent.vue";
-import SelectGroup from "@/components/ui/select/SelectGroup.vue";
 import SelectItem from "@/components/ui/select/SelectItem.vue";
 
 const { t } = useI18n();

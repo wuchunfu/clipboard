@@ -78,6 +78,10 @@ async function updater() {
 
   // 4. Iterate through assets to find signatures and bundles
   const assets = release.assets;
+  console.log(
+    `Found ${assets.length} assets in release.`,
+    assets.map((a) => a.name)
+  );
   const sigAssets = assets.filter((a) => a.name.endsWith(".sig"));
 
   for (const sigAsset of sigAssets) {
