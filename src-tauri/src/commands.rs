@@ -169,10 +169,15 @@ pub fn toggle_pin(state: tauri::State<AppState>, index: usize) -> Result<bool, S
 
 #[tauri::command]
 pub fn clear_history(app: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
-    match state.db.clear_history(
-        state.config.lock().unwrap().clear_pinned_on_clear,
-        state.config.lock().unwrap().clear_collected_on_clear,
-    ) {
+    let (clear_pinned, clear_collected) = {
+        let config = state.config.lock().unwrap();
+        (
+            config.clear_pinned_on_clear,
+            config.clear_collected_on_clear,
+        )
+    };
+
+    match state.db.clear_history(clear_pinned, clear_collected) {
         Ok(items) => {
             for item in items {
                 if item.kind == "image" {
