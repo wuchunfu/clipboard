@@ -33,6 +33,14 @@ To improve efficiency, we support multiple navigation methods so your hands don'
 
 The Paste Stack allows you to copy multiple items and paste them in a specific order. This is extremely useful for filling out forms or moving data between applications.
 
+### New Features (2026)
+
+- **Async OCR**: Text extraction from images is now fully async on Windows/macOS, ensuring no deadlocks or database lock issues.
+- **History Protection**: When clearing history, pinned/collected items are protected by default and a confirmation dialog is shown.
+- **Edit/Add Clipboard Items**: You can now add or edit text/code/url/email/phone items directly in the app (images not supported yet). Use the “Edit” or “Add” button in the main window.
+- **Database Reliability**: All database operations are async, so the app remains responsive even during heavy OCR or history operations.
+- **Tray & UI Sync**: Tray menu and main window always stay in sync for a seamless experience.
+
 1.  **Select Items**:
     - **Keyboard**: Navigate to an item and press `x` to select/deselect it.
     - **Mouse**: Hold `Cmd` (macOS) or `Ctrl` (Windows) and click on items.

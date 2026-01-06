@@ -9,7 +9,15 @@ use cocoa::foundation::{NSArray, NSAutoreleasePool, NSString};
 use objc::{class, msg_send, sel, sel_impl};
 
 #[cfg(target_os = "macos")]
-pub fn recognize_text(image_path: &str) -> Result<String, String> {
+pub async fn recognize_text(image_path: &str) -> Result<String, String> {
+    let path = image_path.to_string();
+    tauri::async_runtime::spawn_blocking(move || recognize_text_sync(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[cfg(target_os = "macos")]
+fn recognize_text_sync(image_path: &str) -> Result<String, String> {
     unsafe {
         let _pool = NSAutoreleasePool::new(nil);
 
@@ -86,13 +94,8 @@ use windows::{
 };
 
 #[cfg(target_os = "windows")]
-pub fn recognize_text(image_path: &str) -> Result<String, String> {
-    tauri::async_runtime::block_on(async move { recognize_text_async(image_path).await })
-}
-
-#[cfg(target_os = "windows")]
-async fn recognize_text_async(image_path: &str) -> Result<String, String> {
-    log::info!("recognize_text_async called with path: {}", image_path);
+pub async fn recognize_text(image_path: &str) -> Result<String, String> {
+    log::info!("recognize_text called with path: {}", image_path);
 
     let original_path = image_path.to_string();
     log::info!("Original path: {}", original_path);
@@ -218,6 +221,6 @@ async fn recognize_text_async(image_path: &str) -> Result<String, String> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-pub fn recognize_text(_image_path: &str) -> Result<String, String> {
+pub async fn recognize_text(_image_path: &str) -> Result<String, String> {
     Err("OCR is only supported on macOS and Windows".to_string())
 }

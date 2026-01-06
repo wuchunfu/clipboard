@@ -32,6 +32,7 @@ import {
   Phone,
   Code,
   ScanText,
+  Edit2,
 } from "lucide-vue-next";
 import Button from "@/components/ui/button/Button.vue";
 import Input from "@/components/ui/input/Input.vue";
@@ -62,6 +63,7 @@ import SelectTrigger from "@/components/ui/select/SelectTrigger.vue";
 import SelectValue from "@/components/ui/select/SelectValue.vue";
 import SelectContent from "@/components/ui/select/SelectContent.vue";
 import SelectItem from "@/components/ui/select/SelectItem.vue";
+import ItemEditorDialog from "@/components/ItemEditorDialog.vue";
 
 const { t } = useI18n();
 const { toastMessage } = useToast();
@@ -93,6 +95,8 @@ const {
   isLoading,
   hasMore,
   ocrImage,
+  updateItemContent,
+  addItem,
 } = useClipboard();
 
 function handleScroll(e: Event) {
@@ -129,6 +133,26 @@ const {
   handleShortcutKeydown,
   setupConfigListeners,
 } = useSettings();
+
+const showItemEditor = ref(false);
+const editingItem = ref<ClipboardItem | null>(null);
+
+function openEditor(item: ClipboardItem | null) {
+  editingItem.value = item;
+  showItemEditor.value = true;
+}
+
+function handleEditorSave(data: {
+  content: string;
+  dataType: string;
+  id?: number;
+}) {
+  if (data.id) {
+    updateItemContent(data.id, data.content, data.dataType);
+  } else {
+    addItem(data.content);
+  }
+}
 
 // Form schema
 const formSchema = toTypedSchema(
@@ -291,6 +315,14 @@ function removeSensitiveApp(app: string) {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  // Ignore keydown events coming from input elements or when dialogs are open
+  const target = e.target as HTMLElement;
+  const isInput =
+    ["INPUT", "TEXTAREA"].includes(target.tagName) || target.isContentEditable;
+  const isDialogGiven = showSettings.value || showItemEditor.value;
+
+  if ((isInput || isDialogGiven) && e.key !== "Escape") return;
+
   const len = filteredHistory.value.length;
   if (len === 0 && e.key !== "Escape") return;
 
@@ -431,6 +463,15 @@ onUnmounted(() => {
             "
           >
             <component :is="isPaused ? Play : Pause" class="w-4 h-4" />
+          </Button>
+          <Button
+            @click="openEditor(null)"
+            size="icon"
+            variant="ghost"
+            class="h-7 w-7"
+            :title="t('actions.addItem')"
+          >
+            <Plus class="w-4 h-4" />
           </Button>
           <Button
             @click="openSettings"
@@ -629,6 +670,16 @@ onUnmounted(() => {
             class="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border"
             @click.stop
           >
+            <Button
+              v-if="item.kind !== 'image' && !item.is_sensitive"
+              size="icon"
+              variant="ghost"
+              class="h-6 w-6 text-muted-foreground hover:text-primary"
+              :title="t('actions.edit')"
+              @click.stop="openEditor(item)"
+            >
+              <Edit2 class="w-3.5 h-3.5" />
+            </Button>
             <Button
               v-if="item.source_app"
               @click.stop="addSensitiveApp(item.source_app)"
@@ -1163,6 +1214,12 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+    <ItemEditorDialog
+      :open="showItemEditor"
+      :item="editingItem"
+      @update:open="showItemEditor = $event"
+      @save="handleEditorSave"
+    />
   </div>
 </template>
 

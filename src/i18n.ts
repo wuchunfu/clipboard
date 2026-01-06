@@ -39,6 +39,13 @@ const messages = {
       addToCollection: "Add to Collection",
       ocr: "Extract Text",
       deleteItem: "Delete Item",
+      edit: "Edit",
+      addItem: "Add Item",
+    },
+    editor: {
+      type: "Type",
+      content: "Content",
+      placeholder: "Enter content here...",
     },
     collections: {
       all: "All Items",
@@ -151,6 +158,13 @@ const messages = {
       addToCollection: "添加到收藏夹",
       ocr: "提取文字",
       deleteItem: "删除记录",
+      edit: "编辑",
+      addItem: "手动添加",
+    },
+    editor: {
+      type: "类型",
+      content: "内容",
+      placeholder: "在此输入内容...",
     },
     collections: {
       all: "全部记录",

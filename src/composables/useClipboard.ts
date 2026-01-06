@@ -225,6 +225,39 @@ export function useClipboard() {
     }
   }
 
+  async function updateItemContent(
+    id: number,
+    content: string,
+    dataType: string
+  ) {
+    try {
+      await invoke("update_clipboard_item_content", {
+        id,
+        content,
+        dataType,
+      });
+      await loadHistory(true);
+      showToast(t("collections.itemUpdated"));
+    } catch (e) {
+      console.error("Failed to update item content:", e);
+      showToast(t("collections.updateFailed"));
+    }
+  }
+
+  async function addItem(content: string) {
+    try {
+      await invoke("set_clipboard_item", {
+        content,
+        kind: "text",
+        id: null,
+      });
+      await loadHistory(true);
+      showToast(t("toast.copied"));
+    } catch (e) {
+      console.error("Failed to add item:", e);
+    }
+  }
+
   async function toggleSensitive(index: number) {
     const item = filteredHistory.value[index];
     const realIndex = history.value.indexOf(item);
@@ -411,5 +444,7 @@ export function useClipboard() {
     clearSelection,
     pasteStack,
     ocrImage,
+    updateItemContent,
+    addItem,
   };
 }

@@ -111,19 +111,32 @@ async function updater() {
 
     // Determine platform key
     let platformKey = "";
-    if (bundleName.includes("aarch64-apple-darwin")) {
+    // macOS Arm64
+    if (
+      bundleName.includes("aarch64") &&
+      (bundleName.endsWith(".dmg") || bundleName.endsWith(".app.tar.gz"))
+    ) {
       platformKey = "darwin-aarch64";
-    } else if (bundleName.includes("x86_64-apple-darwin")) {
+    }
+    // macOS Intel
+    else if (
+      bundleName.includes("x64") &&
+      (bundleName.endsWith(".dmg") || bundleName.endsWith(".app.tar.gz"))
+    ) {
       platformKey = "darwin-x86_64";
-    } else if (
-      bundleName.includes("x86_64-unknown-linux-gnu") ||
-      bundleName.endsWith(".AppImage.tar.gz")
+    }
+    // Linux
+    else if (
+      bundleName.includes("amd64.AppImage") ||
+      bundleName.includes("amd64.deb") ||
+      bundleName.endsWith(".x86_64.rpm")
     ) {
       platformKey = "linux-x86_64";
-    } else if (
-      bundleName.includes("x86_64-pc-windows-msvc") ||
-      bundleName.endsWith(".nsis.zip") ||
-      bundleName.endsWith(".msi.zip")
+    }
+    // Windows
+    else if (
+      bundleName.includes("x64-setup.exe") ||
+      bundleName.includes("x64_en-US.msi")
     ) {
       platformKey = "windows-x86_64";
     }

@@ -10,11 +10,13 @@ If you are a developer and want to contribute code to this project or build it y
 
 This project is built with a modern tech stack, balancing performance and development experience:
 
-- **Core Framework**: [Tauri v2](https://v2.tauri.app/) (Rust + Webview)
-- **Frontend Framework**: [Vue 3](https://vuejs.org/) + TypeScript
-- **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
-- **UI Components**: [Radix Vue](https://www.radix-vue.com/) + [Lucide Icons](https://lucide.dev/)
-- **Database**: SQLite (via `rusqlite` driver)
+## Recent Features & Improvements
+
+- **Async OCR Refactor**: Windows and macOS OCR logic is now fully async, preventing deadlocks and database lock issues.
+- **Robust History Management**: History deletion now includes confirmation dialogs and protects pinned/collected items unless configured otherwise.
+- **Advanced Item Editing**: You can add or edit text/code/url/email/phone clipboard items directly in the app (images not supported yet).
+- **Database Reliability**: All database operations are now async, ensuring the database is never locked during heavy OCR or history operations.
+- **Frontend/Backend Sync**: Tray menu and frontend state are always synchronized for a seamless experience.
 
 ## Prerequisites
 

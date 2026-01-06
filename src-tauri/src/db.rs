@@ -1,5 +1,6 @@
 use crate::crypto::Crypto;
 use crate::models::{ClipboardItem, Collection};
+use chrono::Local;
 use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -365,6 +366,40 @@ impl Database {
         } else {
             Err(rusqlite::Error::QueryReturnedNoRows)
         }
+    }
+
+    pub fn update_content(
+        &self,
+        id: i64,
+        new_content: String,
+        new_data_type: String,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+
+        // Fetch is_sensitive and kind to encrypt if needed
+        let (is_sensitive, kind): (bool, String) = conn.query_row(
+            "SELECT is_sensitive, kind FROM history WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+
+        let final_content = if is_sensitive && kind == "text" {
+            self.crypto.encrypt(&new_content).unwrap_or(new_content)
+        } else {
+            new_content
+        };
+
+        conn.execute(
+            "UPDATE history SET content = ?1, data_type = ?2, timestamp = ?3 WHERE id = ?4",
+            params![
+                final_content,
+                new_data_type,
+                Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                id
+            ],
+        )?;
+
+        Ok(())
     }
 
     pub fn clear_history(

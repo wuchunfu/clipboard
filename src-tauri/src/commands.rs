@@ -168,6 +168,25 @@ pub fn toggle_pin(state: tauri::State<AppState>, index: usize) -> Result<bool, S
 }
 
 #[tauri::command]
+pub fn update_clipboard_item_content(
+    state: tauri::State<AppState>,
+    id: i64,
+    content: String,
+    data_type: String,
+) -> Result<(), String> {
+    match state.db.update_content(id, content, data_type) {
+        Ok(_) => {
+            log::info!("Updated item content for id {}", id);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("Failed to update item content: {}", e);
+            Err(e.to_string())
+        }
+    }
+}
+
+#[tauri::command]
 pub fn clear_history(app: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
     let (clear_pinned, clear_collected) = {
         let config = state.config.lock().unwrap();
@@ -330,9 +349,9 @@ pub fn set_paste_stack(
 }
 
 #[tauri::command]
-pub fn ocr_image(image_path: String) -> Result<String, String> {
+pub async fn ocr_image(image_path: String) -> Result<String, String> {
     log::info!("Starting OCR for image: {}", image_path);
-    match recognize_text(&image_path) {
+    match recognize_text(&image_path).await {
         Ok(text) => {
             log::info!("OCR successful, text length: {}", text.len());
             Ok(text)

@@ -36,18 +36,13 @@ sidebar_position: 4
     cd clipboard
     ```
 
-2.  **安装依赖**
-
-    ```bash
-    pnpm install
     ```
 
-3.  **启动开发模式**
+    ```
 
-    此命令将同时启动前端开发服务器和 Tauri 后端，并开启热重载。
+2.  **启动开发模式**
+    ```
 
-    ```bash
-    pnpm tauri dev
     ```
 
 ## 构建发布

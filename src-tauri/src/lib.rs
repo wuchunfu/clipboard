@@ -308,6 +308,7 @@ pub fn run() {
             delete_item,
             toggle_sensitive,
             toggle_pin,
+            update_clipboard_item_content,
             clear_history,
             get_config,
             save_config,
