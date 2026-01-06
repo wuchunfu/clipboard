@@ -74,6 +74,11 @@ impl Database {
             tx.execute("PRAGMA user_version = 4", [])?;
         }
 
+        if version < 5 {
+            let _ = tx.execute("ALTER TABLE history ADD COLUMN note TEXT", []);
+            tx.execute("PRAGMA user_version = 5", [])?;
+        }
+
         tx.commit()?;
 
         Ok(Self {
@@ -92,13 +97,15 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let offset = (page - 1) * page_size;
 
-        let mut sql = String::from("SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id FROM history WHERE 1=1");
+        let mut sql = String::from("SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note FROM history WHERE 1=1");
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
         if let Some(q) = &query {
             if !q.is_empty() {
-                sql.push_str(" AND content LIKE ?");
-                params.push(Box::new(format!("%{}%", q)));
+                sql.push_str(" AND (content LIKE ? OR note LIKE ?)");
+                let pattern = format!("%{}%", q);
+                params.push(Box::new(pattern.clone()));
+                params.push(Box::new(pattern));
             }
         }
 
@@ -126,6 +133,7 @@ impl Database {
             let source_app: Option<String> = row.get(6)?;
             let data_type: String = row.get(7)?;
             let collection_id: Option<i64> = row.get(8)?;
+            let note: Option<String> = row.get(9)?;
 
             let final_content = if is_sensitive && kind == "text" {
                 self.crypto.decrypt(&content).unwrap_or(content)
@@ -143,6 +151,7 @@ impl Database {
                 source_app,
                 data_type,
                 collection_id,
+                note,
             })
         })?;
 
@@ -174,7 +183,7 @@ impl Database {
         if updated_count == 0 {
             // Insert new item
             conn.execute(
-                "INSERT INTO history (content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT INTO history (content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     content_to_store,
                     item.kind,
@@ -183,7 +192,8 @@ impl Database {
                     item.is_pinned,
                     item.source_app,
                     item.data_type,
-                    item.collection_id
+                    item.collection_id,
+                    item.note
                 ],
             )?;
         }
@@ -195,7 +205,7 @@ impl Database {
 
             // Fetch items to be deleted first (oldest timestamp, NOT pinned)
             let mut stmt = conn.prepare(&format!(
-                "SELECT content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id FROM history WHERE is_pinned = 0 ORDER BY timestamp ASC LIMIT {}",
+                "SELECT content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note FROM history WHERE is_pinned = 0 ORDER BY timestamp ASC LIMIT {}",
                 delete_count
             ))?;
 
@@ -208,6 +218,7 @@ impl Database {
                 let source_app: Option<String> = row.get(5)?;
                 let data_type: String = row.get(6)?;
                 let collection_id: Option<i64> = row.get(7)?;
+                let note: Option<String> = row.get(8)?;
 
                 let final_content = if is_sensitive && kind == "text" {
                     self.crypto.decrypt(&content).unwrap_or(content)
@@ -225,6 +236,7 @@ impl Database {
                     source_app,
                     data_type,
                     collection_id,
+                    note,
                 })
             })?;
 
@@ -256,7 +268,7 @@ impl Database {
         // Get the ID and details of the item at the specified offset
         let item: Option<(i64, ClipboardItem)> = conn
             .query_row(
-                "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id FROM history ORDER BY is_pinned DESC, timestamp DESC LIMIT 1 OFFSET ?1",
+                "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note FROM history ORDER BY is_pinned DESC, timestamp DESC LIMIT 1 OFFSET ?1",
                 params![index],
                 |row| {
                     let id: i64 = row.get(0)?;
@@ -268,6 +280,7 @@ impl Database {
                     let source_app: Option<String> = row.get(6)?;
                     let data_type: String = row.get(7)?;
                     let collection_id: Option<i64> = row.get(8)?;
+                    let note: Option<String> = row.get(9)?;
 
                     let final_content = if is_sensitive && kind == "text" {
                         self.crypto.decrypt(&content).unwrap_or(content)
@@ -287,6 +300,7 @@ impl Database {
                             source_app,
                             data_type,
                             collection_id,
+                            note,
                         },
                     ))
                 },
@@ -373,6 +387,7 @@ impl Database {
         id: i64,
         new_content: String,
         new_data_type: String,
+        new_note: Option<String>,
     ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
 
@@ -390,11 +405,12 @@ impl Database {
         };
 
         conn.execute(
-            "UPDATE history SET content = ?1, data_type = ?2, timestamp = ?3 WHERE id = ?4",
+            "UPDATE history SET content = ?1, data_type = ?2, timestamp = ?3, note = ?4 WHERE id = ?5",
             params![
                 final_content,
                 new_data_type,
                 Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                new_note,
                 id
             ],
         )?;
@@ -426,7 +442,7 @@ impl Database {
 
         // 查询所有将要被删除的项
         let select_sql = format!(
-            "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id FROM history {}",
+            "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note FROM history {}",
             where_clause
         );
         let mut stmt = conn.prepare(&select_sql)?;
@@ -440,6 +456,7 @@ impl Database {
             let source_app: Option<String> = row.get(6)?;
             let data_type: String = row.get(7)?;
             let collection_id: Option<i64> = row.get(8)?;
+            let note: Option<String> = row.get(9)?;
 
             let final_content = if is_sensitive && kind == "text" {
                 self.crypto.decrypt(&content).unwrap_or(content)
@@ -457,6 +474,7 @@ impl Database {
                 source_app,
                 data_type,
                 collection_id,
+                note,
             })
         })?;
 

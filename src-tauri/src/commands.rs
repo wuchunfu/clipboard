@@ -49,6 +49,7 @@ pub fn set_clipboard_item(
         source_app: None,
         data_type,
         collection_id: None,
+        note: None,
     };
 
     // Write to clipboard
@@ -173,8 +174,9 @@ pub fn update_clipboard_item_content(
     id: i64,
     content: String,
     data_type: String,
+    note: Option<String>,
 ) -> Result<(), String> {
-    match state.db.update_content(id, content, data_type) {
+    match state.db.update_content(id, content, data_type, note) {
         Ok(_) => {
             log::info!("Updated item content for id {}", id);
             Ok(())

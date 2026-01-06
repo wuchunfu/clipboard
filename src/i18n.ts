@@ -45,7 +45,9 @@ const messages = {
     editor: {
       type: "Type",
       content: "Content",
+      note: "Note/Alias",
       placeholder: "Enter content here...",
+      notePlaceholder: "E.g. GitHub Password, Work Email...",
     },
     collections: {
       all: "All Items",
@@ -164,7 +166,9 @@ const messages = {
     editor: {
       type: "类型",
       content: "内容",
+      note: "备注/标题",
       placeholder: "在此输入内容...",
+      notePlaceholder: "例如：GitHub 密码, 公司邮箱...",
     },
     collections: {
       all: "全部记录",

@@ -16,6 +16,8 @@ pub struct ClipboardItem {
     pub data_type: String, // "text", "image", "url", "email", "code", "phone"
     #[serde(default)]
     pub collection_id: Option<i64>,
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 fn default_data_type() -> String {

@@ -97,6 +97,7 @@ impl ClipboardHandler for ClipboardMonitor {
                     source_app: source_app.clone(),
                     data_type,
                     collection_id: None,
+                    note: None,
                 };
 
                 match state.db.insert_item(&item, max_size) {
@@ -167,6 +168,7 @@ impl ClipboardHandler for ClipboardMonitor {
                             source_app: source_app.clone(),
                             data_type: "image".to_string(),
                             collection_id: None,
+                            note: None,
                         };
 
                         match state.db.insert_item(&item, max_size) {

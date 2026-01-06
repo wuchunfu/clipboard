@@ -33,6 +33,7 @@ import {
   Code,
   ScanText,
   Edit2,
+  NotepadText,
 } from "lucide-vue-next";
 import Button from "@/components/ui/button/Button.vue";
 import Input from "@/components/ui/input/Input.vue";
@@ -99,6 +100,11 @@ const {
   addItem,
 } = useClipboard();
 
+const getCollectionName = (id?: number) => {
+  if (!id) return undefined;
+  return collections.value.find((c) => c.id === id)?.name;
+};
+
 function handleScroll(e: Event) {
   const target = e.target as HTMLElement;
   if (
@@ -145,10 +151,11 @@ function openEditor(item: ClipboardItem | null) {
 function handleEditorSave(data: {
   content: string;
   dataType: string;
+  note?: string;
   id?: number;
 }) {
   if (data.id) {
-    updateItemContent(data.id, data.content, data.dataType);
+    updateItemContent(data.id, data.content, data.dataType, data.note);
   } else {
     addItem(data.content);
   }
@@ -608,6 +615,23 @@ onUnmounted(() => {
                     class="text-[10px] font-mono text-muted-foreground opacity-70"
                     >{{ formatTimeAgo(item.timestamp) }}</span
                   >
+                  <div
+                    v-if="getCollectionName(item.collection_id)"
+                    class="flex items-center gap-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px]"
+                  >
+                    <Folder class="w-3 h-3" />
+                    <span class="max-w-20 truncate">{{
+                      getCollectionName(item.collection_id)
+                    }}</span>
+                  </div>
+                  <div
+                    v-if="item.note"
+                    class="flex items-center gap-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px]"
+                  >
+                    <NotepadText class="w-3 h-3" />
+                    <span class="max-w-[100px] truncate">{{ item.note }}</span>
+                  </div>
+
                   <span
                     v-if="item.source_app"
                     class="text-[10px] text-muted-foreground/60 truncate max-w-[100px]"
@@ -621,21 +645,33 @@ onUnmounted(() => {
                 v-if="config.compact_mode"
                 class="flex items-center justify-between gap-2"
               >
-                <p
-                  v-if="item.kind === 'text'"
-                  class="text-xs text-foreground line-clamp-1 break-all font-medium flex-1"
-                  :class="{
-                    'blur-sm group-hover:blur-none transition-all':
-                      item.is_sensitive,
-                  }"
-                >
-                  {{ item.content }}
-                </p>
-                <div v-else class="flex items-center gap-2 flex-1">
-                  <span class="text-xs text-muted-foreground italic"
-                    >[Image]</span
+                <div class="flex-1 min-w-0 flex items-center gap-2">
+                  <p
+                    v-if="item.kind === 'text'"
+                    class="text-xs text-foreground line-clamp-1 break-all font-medium flex-1"
+                    :class="{
+                      'blur-sm group-hover:blur-none transition-all':
+                        item.is_sensitive,
+                      'text-muted-foreground opacity-80': !!item.note,
+                    }"
                   >
+                    {{ item.content }}
+                  </p>
+                  <div v-else class="flex items-center gap-2 flex-1">
+                    <span class="text-xs text-muted-foreground italic"
+                      >[Image]</span
+                    >
+                  </div>
                 </div>
+
+                <div
+                  v-if="getCollectionName(item.collection_id)"
+                  class="shrink-0 text-primary opacity-70"
+                  :title="getCollectionName(item.collection_id)"
+                >
+                  <Folder class="w-3 h-3" />
+                </div>
+
                 <span
                   class="text-[9px] font-mono text-muted-foreground opacity-50 shrink-0"
                   >{{ formatTimeAgo(item.timestamp) }}</span
@@ -643,11 +679,18 @@ onUnmounted(() => {
               </div>
               <template v-else>
                 <p
+                  v-if="item.note"
+                  class="text-sm font-semibold text-foreground mb-0.5"
+                >
+                  {{ item.note }}
+                </p>
+                <p
                   v-if="item.kind === 'text'"
                   class="text-sm text-foreground line-clamp-2 break-all font-medium"
                   :class="{
                     'blur-sm group-hover:blur-none transition-all':
                       item.is_sensitive,
+                    'text-muted-foreground text-xs': !!item.note,
                   }"
                 >
                   {{ item.content }}

@@ -8,6 +8,7 @@ export interface ClipboardItem {
   source_app?: string;
   data_type?: string;
   collection_id?: number;
+  note?: string;
 }
 
 export interface Collection {

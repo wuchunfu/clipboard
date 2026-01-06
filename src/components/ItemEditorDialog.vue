@@ -27,6 +27,12 @@
           </Select>
         </div>
 
+        <!-- Note Input -->
+        <div class="flex-1 flex flex-col gap-2 flex-grow-0">
+          <Label>{{ t("editor.note") }}</Label>
+          <Input v-model="note" :placeholder="t('editor.notePlaceholder')" />
+        </div>
+
         <!-- Content Editor -->
         <div class="flex-1 flex flex-col gap-2">
           <Label>{{ t("editor.content") }}</Label>
@@ -69,6 +75,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import type { ClipboardItem } from "@/types";
 
 const props = defineProps<{
@@ -78,13 +85,17 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "update:open", value: boolean): void;
-  (e: "save", data: { content: string; dataType: string; id?: number }): void;
+  (
+    e: "save",
+    data: { content: string; dataType: string; note?: string; id?: number }
+  ): void;
 }>();
 
 const { t } = useI18n();
 
 const mode = ref<"add" | "edit">("add");
 const content = ref("");
+const note = ref("");
 const selectedType = ref("text");
 
 watch(
@@ -94,10 +105,12 @@ watch(
       if (props.item) {
         mode.value = "edit";
         content.value = props.item.content;
+        note.value = props.item.note || "";
         selectedType.value = props.item.data_type || "text";
       } else {
         mode.value = "add";
         content.value = "";
+        note.value = "";
         selectedType.value = "text";
       }
     }
@@ -110,6 +123,7 @@ function handleSave() {
   emit("save", {
     content: content.value,
     dataType: selectedType.value,
+    note: note.value,
     id: props.item?.id,
   });
   emit("update:open", false);

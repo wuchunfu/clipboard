@@ -228,13 +228,15 @@ export function useClipboard() {
   async function updateItemContent(
     id: number,
     content: string,
-    dataType: string
+    dataType: string,
+    note?: string
   ) {
     try {
       await invoke("update_clipboard_item_content", {
         id,
         content,
         dataType,
+        note,
       });
       await loadHistory(true);
       showToast(t("collections.itemUpdated"));
